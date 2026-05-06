@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: openseedr-config
+  namespace: openseedr
+data:
+  APP_ENV: "production"
+  APP_VERSION: "0.1.0"
+  PORT: "8080"
+  DB_HOST: "postgres"
+  DB_PORT: "5432"
+  DB_USER: "openseedr"
+  DB_NAME: "openseedr"
+  QBITTORRENT_URL: "http://qbittorrent:8080"
+  QBITTORRENT_USER: "admin"
+  STORAGE_PATH: "/data"
+  CORS_ORIGIN: "https://yourdomain.com"
+  OTEL_EXPORTER_OTLP_ENDPOINT: "otel-collector:4317"
+  GOOGLE_REDIRECT_URL: "https://yourdomain.com/api/v1/auth/google/callback"
+  GITHUB_REDIRECT_URL: "https://yourdomain.com/api/v1/auth/github/callback"

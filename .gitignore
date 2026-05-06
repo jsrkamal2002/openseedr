@@ -1,0 +1,19 @@
+# Environment secrets — use .env.example as template
+.env
+
+# Go build artifacts
+api/bin/
+api/tmp/
+
+# Frontend build output and deps
+frontend/node_modules/
+frontend/dist/
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# Docker volumes / local data
+data/

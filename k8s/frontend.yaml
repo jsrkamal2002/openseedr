@@ -1,0 +1,59 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openseedr-frontend
+  namespace: openseedr
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: openseedr-frontend
+  template:
+    metadata:
+      labels:
+        app: openseedr-frontend
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101     # nginx user
+        runAsGroup: 101
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: frontend
+          image: openseedr/frontend:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 15
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false   # nginx needs to write tmp files
+            capabilities:
+              drop: [ALL]
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: openseedr-frontend
+  namespace: openseedr
+spec:
+  selector:
+    app: openseedr-frontend
+  ports:
+    - port: 8080
+      targetPort: 8080

@@ -1,0 +1,28 @@
+<script setup lang="ts">
+const props = defineProps<{ used: number; quota: number }>()
+
+const pct = Math.min((props.used / props.quota) * 100, 100)
+
+function fmt(b: number) {
+  if (b === 0) return '0 B'
+  const k = 1024, s = ['B', 'KB', 'MB', 'GB', 'TB']
+  const i = Math.floor(Math.log(b) / Math.log(k))
+  return `${(b / Math.pow(k, i)).toFixed(1)} ${s[i]}`
+}
+</script>
+
+<template>
+  <div class="bg-gray-900 border border-gray-800 rounded-xl px-5 py-4">
+    <div class="flex justify-between text-sm mb-2">
+      <span class="text-gray-400">Storage used</span>
+      <span class="text-gray-300">{{ fmt(used) }} / {{ fmt(quota) }}</span>
+    </div>
+    <div class="h-2 bg-gray-800 rounded-full overflow-hidden">
+      <div
+        class="h-full rounded-full transition-all duration-500"
+        :class="pct > 90 ? 'bg-red-500' : pct > 70 ? 'bg-yellow-500' : 'bg-indigo-500'"
+        :style="{ width: pct + '%' }"
+      />
+    </div>
+  </div>
+</template>

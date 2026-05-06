@@ -1,0 +1,94 @@
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: qbittorrent
+  namespace: openseedr
+spec:
+  serviceName: qbittorrent
+  replicas: 1
+  selector:
+    matchLabels:
+      app: qbittorrent
+  template:
+    metadata:
+      labels:
+        app: qbittorrent
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+        - name: qbittorrent
+          image: openseedr/qbittorrent:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+              name: webui
+            - containerPort: 6881
+              name: bt-tcp
+              protocol: TCP
+            - containerPort: 6881
+              name: bt-udp
+              protocol: UDP
+          env:
+            - name: QBT_WEBUI_PORT
+              value: "8080"
+          volumeMounts:
+            - name: config
+              mountPath: /config
+            - name: torrent-data
+              mountPath: /data
+          resources:
+            requests:
+              cpu: 200m
+              memory: 256Mi
+            limits:
+              cpu: 1000m
+              memory: 1Gi
+          livenessProbe:
+            httpGet:
+              path: /api/v2/app/version
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+      volumes:
+        - name: torrent-data
+          persistentVolumeClaim:
+            claimName: torrent-data-pvc
+  volumeClaimTemplates:
+    - metadata:
+        name: config
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources:
+          requests:
+            storage: 1Gi
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: qbittorrent
+  namespace: openseedr
+spec:
+  selector:
+    app: qbittorrent
+  ports:
+    - name: webui
+      port: 8080
+      targetPort: 8080
+    - name: bt-tcp
+      port: 6881
+      targetPort: 6881
+      protocol: TCP
+    - name: bt-udp
+      port: 6881
+      targetPort: 6881
+      protocol: UDP
