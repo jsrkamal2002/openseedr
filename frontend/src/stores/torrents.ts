@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import api from '@/composables/useApi'
+import { useFilesStore } from '@/stores/files'
 
 export interface Torrent {
   id: string
@@ -14,6 +15,12 @@ export interface Torrent {
   save_path: string
   added_at: string
   created_at: string
+  // Live-only fields from qBittorrent (not stored in DB)
+  download_speed: number
+  upload_speed: number
+  eta: number
+  num_seeds: number
+  num_leechs: number
 }
 
 export const useTorrentStore = defineStore('torrents', () => {
@@ -53,6 +60,9 @@ export const useTorrentStore = defineStore('torrents', () => {
   async function deleteTorrent(id: string, deleteFiles = false) {
     await api.delete(`/torrents/${id}?delete_files=${deleteFiles}`)
     torrents.value = torrents.value.filter((t) => t.id !== id)
+    // Refresh storage usage immediately so the bar updates without a page reload
+    const filesStore = useFilesStore()
+    await filesStore.fetchStorageInfo()
   }
 
   async function pauseTorrent(id: string) {

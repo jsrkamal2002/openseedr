@@ -20,6 +20,7 @@ type QBittorrentClient struct {
 	password   string
 	httpClient *http.Client
 	cookie     string
+	cookieName string // QBT_SID_<port> in qBittorrent ≥5, "SID" in older versions
 	mu         sync.Mutex
 }
 
@@ -73,17 +74,24 @@ func (c *QBittorrentClient) login() error {
 	defer resp.Body.Close()
 
 	body, _ := io.ReadAll(resp.Body)
-	if string(body) != "Ok." {
-		return fmt.Errorf("qBittorrent login rejected: %s", string(body))
+	bodyStr := strings.TrimSpace(string(body))
+
+	// qBittorrent ≥5 returns 204 No Content on success.
+	// Older versions return HTTP 200 with body "Ok.".
+	if resp.StatusCode != http.StatusNoContent && bodyStr != "Ok." {
+		return fmt.Errorf("qBittorrent login rejected (HTTP %d): %s", resp.StatusCode, bodyStr)
 	}
 
+	// qBittorrent ≥5 uses QBT_SID_<port> as the session cookie name.
+	// Older versions used "SID". Accept either.
 	for _, cookie := range resp.Cookies() {
-		if cookie.Name == "SID" {
+		if cookie.Name == "SID" || strings.HasPrefix(cookie.Name, "QBT_SID_") {
 			c.cookie = cookie.Value
+			c.cookieName = cookie.Name
 			return nil
 		}
 	}
-	return fmt.Errorf("no SID cookie in qBittorrent response")
+	return fmt.Errorf("no session cookie in qBittorrent response")
 }
 
 func (c *QBittorrentClient) doRequest(method, path string, body io.Reader, contentType string) (*http.Response, error) {
@@ -98,10 +106,9 @@ func (c *QBittorrentClient) doRequest(method, path string, body io.Reader, conte
 		return nil, err
 	}
 
-	// G124: SID is a server-to-server session cookie for the internal qBittorrent
-	// API — Secure/HttpOnly/SameSite are browser-only attributes and not
-	// applicable to server-side HTTP client calls.
-		req.AddCookie(&http.Cookie{Name: "SID", Value: c.cookie}) // #nosec G124 -- internal server-to-server cookie, browser cookie attributes not applicable
+	// G124: session cookie is for internal server-to-server qBittorrent API calls;
+	// browser-only cookie attributes (Secure/HttpOnly/SameSite) are not applicable.
+	req.AddCookie(&http.Cookie{Name: c.cookieName, Value: c.cookie}) // #nosec G124 -- internal server-to-server cookie, browser cookie attributes not applicable
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
 	}
@@ -118,7 +125,7 @@ func (c *QBittorrentClient) doRequest(method, path string, body io.Reader, conte
 		if err := c.login(); err != nil {
 			return nil, err
 		}
-	req.AddCookie(&http.Cookie{Name: "SID", Value: c.cookie}) // #nosec G124 -- internal server-to-server cookie, browser cookie attributes not applicable
+		req.AddCookie(&http.Cookie{Name: c.cookieName, Value: c.cookie}) // #nosec G124 -- internal server-to-server cookie, browser cookie attributes not applicable
 		return c.httpClient.Do(req)
 	}
 

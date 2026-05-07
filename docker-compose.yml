@@ -22,11 +22,13 @@ services:
   # ── qBittorrent ─────────────────────────────────────────────────────────────
   qbittorrent:
     build:
-      context: ./qbittorrent/src    # qBittorrent submodule
-      dockerfile: ../Dockerfile
+      context: ./qbittorrent       # includes Dockerfile + docker-entrypoint.sh
+      dockerfile: Dockerfile
     restart: unless-stopped
     environment:
       QBT_WEBUI_PORT: "8080"
+      QBT_WEBUI_USER: ${QBT_USER:-admin}
+      QBT_WEBUI_PASS: ${QBT_PASS:?QBT_PASS is required}
     volumes:
       - qbt_config:/config
       - torrent_data:/data          # shared with api
@@ -82,6 +84,8 @@ services:
 
       # OTel
       OTEL_EXPORTER_OTLP_ENDPOINT: otel-collector:4317
+      # Required by Go's user.Current() when CGO is disabled (scratch image)
+      USER: openseedr
     volumes:
       - torrent_data:/data
     networks: [backend, frontend]
@@ -146,7 +150,7 @@ services:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus_data:/prometheus
     ports:
-      - "9090:9090"
+      - "9092:9090"
     networks: [observability]
 
   # ── Loki (log aggregation) ─────────────────────────────────────────────────────

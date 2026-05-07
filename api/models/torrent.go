@@ -20,8 +20,8 @@ const (
 
 type Torrent struct {
 	ID         uuid.UUID     `gorm:"type:uuid;primaryKey" json:"id"`
-	UserID     uuid.UUID     `gorm:"type:uuid;index;not null" json:"user_id"`
-	Hash       string        `gorm:"uniqueIndex;not null" json:"hash"`
+	UserID     uuid.UUID     `gorm:"type:uuid;index;not null;uniqueIndex:idx_torrents_user_hash" json:"user_id"`
+	Hash       string        `gorm:"not null;uniqueIndex:idx_torrents_user_hash" json:"hash"`
 	Name       string        `gorm:"not null" json:"name"`
 	Size       int64         `gorm:"default:0" json:"size"`
 	Downloaded int64         `gorm:"default:0" json:"downloaded"`

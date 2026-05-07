@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 func UserStoragePath(userID string) string {
@@ -18,8 +19,15 @@ func UserStoragePath(userID string) string {
 
 func EnsureUserDir(userID string) error {
 	path := UserStoragePath(userID)
-	// G301: 0750 — owner rwx, group rx, no world access
-	return os.MkdirAll(path, 0750)
+	// 0777: both the api user and qBittorrent (different UID) must be able to
+	// read and write this directory. Security isolation between app users is
+	// enforced at the application layer (JWT), not the filesystem layer.
+	// os.Chmod is used after MkdirAll because MkdirAll applies the process
+	// umask, which would silently strip write bits (e.g. 0777 → 0755).
+	if err := os.MkdirAll(path, 0777); err != nil {
+		return err
+	}
+	return os.Chmod(path, 0777)
 }
 
 type FileInfo struct {
@@ -34,10 +42,28 @@ type FileInfo struct {
 // os.Root (Go ≥1.24) prevents directory-traversal attacks at the OS level.
 func openUserRoot(userID string) (*os.Root, error) {
 	basePath := UserStoragePath(userID)
-	if err := os.MkdirAll(basePath, 0750); err != nil {
+	// 0777: must be writable by qBittorrent (different UID) for downloads.
+	// os.Chmod overrides the process umask which would strip write bits.
+	if err := os.MkdirAll(basePath, 0777); err != nil {
+		return nil, err
+	}
+	if err := os.Chmod(basePath, 0777); err != nil {
 		return nil, err
 	}
 	return os.OpenRoot(basePath)
+}
+
+// rootRelPath converts a user-supplied path into a relative path suitable for
+// use with os.Root methods. os.Root (Go ≥1.24) requires relative paths
+// (fs.ValidPath rejects any path beginning with "/").
+func rootRelPath(subPath string) string {
+	// filepath.Clean first to normalise ".." sequences etc., then strip the
+	// leading "/" so the result is always relative.
+	clean := strings.TrimLeft(filepath.Clean(subPath), "/")
+	if clean == "" {
+		return "."
+	}
+	return clean
 }
 
 func ListFiles(userID, subPath string) ([]FileInfo, error) {
@@ -47,10 +73,7 @@ func ListFiles(userID, subPath string) ([]FileInfo, error) {
 	}
 	defer root.Close()
 
-	clean := filepath.Clean(subPath)
-	if clean == "/" {
-		clean = "."
-	}
+	clean := rootRelPath(subPath)
 
 	// Open the target directory, then ReadDir on the *os.File
 	dir, err := root.Open(clean)
@@ -89,8 +112,8 @@ func DeleteFile(userID, subPath string) error {
 	}
 	defer root.Close()
 
-	clean := filepath.Clean(subPath)
-	if clean == "." || clean == "/" || clean == "" {
+	clean := rootRelPath(subPath)
+	if clean == "." || clean == "" {
 		return errors.New("cannot delete root directory")
 	}
 
@@ -107,7 +130,7 @@ func OpenFile(userID, subPath string) (*os.File, os.FileInfo, error) {
 	}
 	defer root.Close()
 
-	clean := filepath.Clean(subPath)
+	clean := rootRelPath(subPath)
 
 	// G304 resolved: os.Root.Open cannot escape the root directory
 	f, err := root.Open(clean)
@@ -131,6 +154,10 @@ func DirSize(path string) (int64, error) {
 	var size int64
 	err := filepath.Walk(path, func(_ string, info os.FileInfo, err error) error {
 		if err != nil {
+			// Directory doesn't exist yet (e.g. new user with no downloads) — treat as 0 bytes.
+			if os.IsNotExist(err) {
+				return filepath.SkipAll
+			}
 			return err
 		}
 		if !info.IsDir() {
@@ -138,6 +165,9 @@ func DirSize(path string) (int64, error) {
 		}
 		return nil
 	})
+	if err == filepath.SkipAll {
+		return 0, nil
+	}
 	return size, err
 }
 

@@ -22,6 +22,17 @@ import (
 
 var torrentTracer = otel.Tracer("openseedr/handlers/torrents")
 
+// TorrentResponse wraps the DB model with live-only fields from qBittorrent
+// that we don't want to persist (speeds, ETA, peer counts).
+type TorrentResponse struct {
+	models.Torrent
+	DownloadSpeed int64 `json:"download_speed"`
+	UploadSpeed   int64 `json:"upload_speed"`
+	Eta           int64 `json:"eta"`
+	NumSeeds      int   `json:"num_seeds"`
+	NumLeechs     int   `json:"num_leechs"`
+}
+
 // ListTorrents handles GET /api/v1/torrents
 func ListTorrents(c *gin.Context) {
 	ctx, span := torrentTracer.Start(c.Request.Context(), "torrents.list")
@@ -39,6 +50,11 @@ func ListTorrents(c *gin.Context) {
 	}
 
 	// Sync live stats from qBittorrent
+	responses := make([]TorrentResponse, len(torrents))
+	for i, t := range torrents {
+		responses[i] = TorrentResponse{Torrent: t}
+	}
+
 	if len(torrents) > 0 {
 		hashes := make([]string, len(torrents))
 		for i, t := range torrents {
@@ -55,20 +71,25 @@ func ListTorrents(c *gin.Context) {
 			}
 			for i, t := range torrents {
 				if qt, ok := liveMap[t.Hash]; ok {
-					torrents[i].Progress = qt.Progress
-					torrents[i].Downloaded = qt.Downloaded
-					torrents[i].Size = qt.Size
-					torrents[i].Status = mapQBState(qt.State)
+					responses[i].Progress = qt.Progress
+					responses[i].Downloaded = qt.Downloaded
+					responses[i].Size = qt.Size
+					responses[i].Status = mapQBState(qt.State)
+					responses[i].DownloadSpeed = qt.DownloadSpeed
+					responses[i].UploadSpeed = qt.UploadSpeed
+					responses[i].Eta = qt.Eta
+					responses[i].NumSeeds = qt.NumSeeds
+					responses[i].NumLeechs = qt.NumLeechs
 				}
 			}
 			// Persist updated stats async (best-effort)
 			go func() {
-				for _, t := range torrents {
-					db.DB.Model(&t).Updates(map[string]interface{}{
-						"progress":   t.Progress,
-						"downloaded": t.Downloaded,
-						"size":       t.Size,
-						"status":     t.Status,
+				for _, r := range responses {
+					db.DB.Model(&r.Torrent).Updates(map[string]interface{}{
+						"progress":   r.Progress,
+						"downloaded": r.Downloaded,
+						"size":       r.Size,
+						"status":     r.Status,
 						"updated_at": time.Now(),
 					})
 				}
@@ -76,7 +97,7 @@ func ListTorrents(c *gin.Context) {
 		}
 	}
 
-	c.JSON(http.StatusOK, gin.H{"torrents": torrents, "count": len(torrents)})
+	c.JSON(http.StatusOK, gin.H{"torrents": responses, "count": len(responses)})
 }
 
 // AddMagnet handles POST /api/v1/torrents/magnet
@@ -116,18 +137,44 @@ func AddMagnet(c *gin.Context) {
 		name = hash
 	}
 
-	torrent := &models.Torrent{
-		UserID:   uuid.MustParse(userID),
-		Hash:     hash,
-		Name:     name,
-		SavePath: savePath,
-		Status:   models.StatusQueued,
-		AddedAt:  time.Now(),
-	}
-	if err := db.DB.Create(torrent).Error; err != nil {
-		span.RecordError(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to record torrent", "trace_id": observability.TraceID(ctx)})
-		return
+	// Restore or create: use Unscoped so we can see soft-deleted records too.
+	// If the user previously had this torrent (active, errored, or deleted),
+	// restore it to queued rather than failing or silently disappearing.
+	var torrent models.Torrent
+	existing := db.DB.Unscoped().
+		Where("user_id = ? AND hash = ?", userID, hash).
+		First(&torrent)
+
+	if existing.Error == nil {
+		// Record exists (possibly soft-deleted) — restore and reset to queued.
+		now := time.Now()
+		if err := db.DB.Unscoped().Model(&torrent).Updates(map[string]interface{}{
+			"name":       name,
+			"save_path":  savePath,
+			"status":     models.StatusQueued,
+			"added_at":   now,
+			"updated_at": now,
+			"deleted_at": nil,
+		}).Error; err != nil {
+			span.RecordError(err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to record torrent", "trace_id": observability.TraceID(ctx)})
+			return
+		}
+	} else {
+		// No existing record — create fresh.
+		torrent = models.Torrent{
+			UserID:   uuid.MustParse(userID),
+			Hash:     hash,
+			Name:     name,
+			SavePath: savePath,
+			Status:   models.StatusQueued,
+			AddedAt:  time.Now(),
+		}
+		if err := db.DB.Create(&torrent).Error; err != nil {
+			span.RecordError(err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to record torrent", "trace_id": observability.TraceID(ctx)})
+			return
+		}
 	}
 
 	observability.RecordTorrentAdded(ctx, userID)
@@ -215,14 +262,20 @@ func GetTorrent(c *gin.Context) {
 	}
 
 	// Refresh from qBittorrent
+	response := TorrentResponse{Torrent: torrent}
 	if qt, err := services.QBClient.GetTorrent(torrent.Hash); err == nil {
-		torrent.Progress = qt.Progress
-		torrent.Downloaded = qt.Downloaded
-		torrent.Size = qt.Size
-		torrent.Status = mapQBState(qt.State)
+		response.Progress = qt.Progress
+		response.Downloaded = qt.Downloaded
+		response.Size = qt.Size
+		response.Status = mapQBState(qt.State)
+		response.DownloadSpeed = qt.DownloadSpeed
+		response.UploadSpeed = qt.UploadSpeed
+		response.Eta = qt.Eta
+		response.NumSeeds = qt.NumSeeds
+		response.NumLeechs = qt.NumLeechs
 	}
 
-	c.JSON(http.StatusOK, torrent)
+	c.JSON(http.StatusOK, response)
 }
 
 // DeleteTorrent handles DELETE /api/v1/torrents/:id

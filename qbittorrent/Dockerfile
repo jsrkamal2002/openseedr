@@ -16,7 +16,7 @@ RUN apk add --no-cache \
     ninja
 
 WORKDIR /src
-COPY . .
+COPY src/ .
 
 RUN cmake -B build -G Ninja \
       -DCMAKE_BUILD_TYPE=Release \
@@ -39,22 +39,26 @@ RUN apk add --no-cache \
     qt6-qtbase \
     openssl \
     ca-certificates \
+    python3 \
     tini
 
 # Non-root user
 RUN addgroup -S qbt && adduser -S -G qbt qbt
 
 COPY --from=builder /usr/local/bin/qbittorrent-nox /usr/local/bin/qbittorrent-nox
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 
-# qBittorrent config and download directories
-RUN mkdir -p /config /data && chown -R qbt:qbt /config /data
+# qBittorrent config and download directories.
+# /data is world-writable (sticky bit) so other containers (e.g. the api,
+# running as a different UID) can create per-user sub-directories inside it.
+RUN mkdir -p /config /data && chown -R qbt:qbt /config /data && chmod 1777 /data
 
 USER qbt
 
 VOLUME ["/config", "/data"]
 EXPOSE 8080 6881 6881/udp
 
-ENTRYPOINT ["/sbin/tini", "--"]
+ENTRYPOINT ["/sbin/tini", "--", "/usr/local/bin/docker-entrypoint.sh"]
 CMD ["qbittorrent-nox", \
      "--profile=/config", \
      "--webui-port=8080"]

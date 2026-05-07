@@ -36,6 +36,10 @@ func Connect() {
 }
 
 func migrate() {
+	// Drop the old global unique index on hash (replaced by composite idx_torrents_user_hash).
+	// AutoMigrate will not remove it automatically; we must do it explicitly once.
+	DB.Exec(`DROP INDEX IF EXISTS idx_torrents_hash`)
+
 	err := DB.AutoMigrate(
 		&models.User{},
 		&models.Torrent{},

@@ -120,7 +120,15 @@ func newResource(ctx context.Context) (*sdkresource.Resource, error) {
 			semconv.DeploymentEnvironment(getEnv("APP_ENV", "development")),
 		),
 		sdkresource.WithOS(),
-		sdkresource.WithProcess(),
+		// WithProcess() includes WithProcessOwner() which calls user.Current().
+		// This fails in CGO-disabled binaries running on scratch images without
+		// $USER set. Use the individual detectors that don't require user info.
+		sdkresource.WithProcessPID(),
+		sdkresource.WithProcessExecutableName(),
+		sdkresource.WithProcessExecutablePath(),
+		sdkresource.WithProcessRuntimeName(),
+		sdkresource.WithProcessRuntimeVersion(),
+		sdkresource.WithProcessRuntimeDescription(),
 		sdkresource.WithHost(),
 	)
 }

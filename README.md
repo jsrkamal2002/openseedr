@@ -132,7 +132,7 @@ First run compiles qBittorrent from source — this takes several minutes. Subse
 | OpenSeedr app | http://localhost |
 | Grafana dashboards | http://localhost:3000 |
 | Jaeger traces | http://localhost:16686 |
-| Prometheus | http://localhost:9090 |
+| Prometheus | http://localhost:9092 |
 | qBittorrent WebUI | http://localhost:8081 *(internal, not exposed by default)* |
 
 ### 5. Register your first account
@@ -358,7 +358,7 @@ OpenSeedr ships a full observability stack out of the box. Every API request is 
 ```
 Grafana   → http://localhost:3000   (admin / $GRAFANA_PASSWORD)
 Jaeger    → http://localhost:16686
-Prometheus→ http://localhost:9090
+Prometheus→ http://localhost:9092
 ```
 
 ### Key Grafana dashboards
