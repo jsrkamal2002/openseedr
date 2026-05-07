@@ -6,6 +6,8 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/openseedr/api/db"
@@ -396,49 +398,21 @@ func mapQBState(state string) models.TorrentStatus {
 }
 
 func extractMagnetHash(magnet string) string {
-	// magnet:?xt=urn:btih:<hash>&...
-	const prefix = "urn:btih:"
-	idx := len(magnet)
-	start := -1
-	for i := 0; i < len(magnet)-len(prefix); i++ {
-		if magnet[i:i+len(prefix)] == prefix {
-			start = i + len(prefix)
-			break
+	u, err := url.Parse(magnet)
+	if err == nil {
+		if xt := u.Query().Get("xt"); strings.HasPrefix(xt, "urn:btih:") {
+			return strings.TrimPrefix(xt, "urn:btih:")
 		}
 	}
-	if start == -1 {
-		return uuid.New().String()
-	}
-	for i := start; i < len(magnet); i++ {
-		if magnet[i] == '&' || magnet[i] == ' ' {
-			idx = i
-			break
-		}
-	}
-	if idx == len(magnet) {
-		return magnet[start:]
-	}
-	return magnet[start:idx]
+	return uuid.New().String()
 }
 
 func extractMagnetName(magnet string) string {
-	const prefix = "dn="
-	start := -1
-	for i := 0; i < len(magnet)-len(prefix); i++ {
-		if magnet[i:i+len(prefix)] == prefix {
-			start = i + len(prefix)
-			break
-		}
-	}
-	if start == -1 {
+	u, err := url.Parse(magnet)
+	if err != nil {
 		return ""
 	}
-	end := len(magnet)
-	for i := start; i < len(magnet); i++ {
-		if magnet[i] == '&' {
-			end = i
-			break
-		}
-	}
-	return magnet[start:end]
+	// url.Query().Get automatically URL-decodes the value, turning
+	// '+' → ' ' and '%XX' sequences into their proper characters.
+	return u.Query().Get("dn")
 }
