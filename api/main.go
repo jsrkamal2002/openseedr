@@ -92,6 +92,7 @@ func main() {
 			torrents.POST("/magnet", handlers.AddMagnet)
 			torrents.POST("/file", handlers.AddTorrentFile)
 			torrents.GET("/:id", handlers.GetTorrent)
+			torrents.GET("/:id/files", handlers.GetTorrentFiles)
 			torrents.DELETE("/:id", handlers.DeleteTorrent)
 			torrents.POST("/:id/pause", handlers.PauseTorrent)
 			torrents.POST("/:id/resume", handlers.ResumeTorrent)

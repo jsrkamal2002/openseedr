@@ -149,11 +149,16 @@ func AddMagnet(c *gin.Context) {
 
 	if existing.Error == nil {
 		// Record exists (possibly soft-deleted) — restore and reset to queued.
+		// Also clear progress/downloaded/size so the card doesn't flash stale
+		// "completed" state before the first qBittorrent sync arrives.
 		now := time.Now()
 		if err := db.DB.Unscoped().Model(&torrent).Updates(map[string]interface{}{
 			"name":       name,
 			"save_path":  savePath,
 			"status":     models.StatusQueued,
+			"progress":   0,
+			"downloaded": 0,
+			"size":       0,
 			"added_at":   now,
 			"updated_at": now,
 			"deleted_at": nil,
@@ -181,6 +186,9 @@ func AddMagnet(c *gin.Context) {
 
 	observability.RecordTorrentAdded(ctx, userID)
 	slog.InfoContext(ctx, "magnet added", "user_id", userID, "hash", hash)
+	// Reload to ensure the response reflects the reset values (progress/downloaded/size = 0),
+	// not the stale pre-update struct loaded from the DB earlier.
+	db.DB.Unscoped().First(&torrent, torrent.ID)
 	c.JSON(http.StatusCreated, gin.H{"torrent": torrent})
 }
 
@@ -361,6 +369,30 @@ func ResumeTorrent(c *gin.Context) {
 
 	db.DB.Model(&torrent).Update("status", models.StatusDownloading)
 	c.JSON(http.StatusOK, gin.H{"message": "torrent resumed"})
+}
+
+// GetTorrentFiles handles GET /api/v1/torrents/:id/files
+func GetTorrentFiles(c *gin.Context) {
+	_, span := torrentTracer.Start(c.Request.Context(), "torrents.files")
+	defer span.End()
+
+	userID := middleware.GetUserID(c)
+	torrentID := c.Param("id")
+	span.SetAttributes(attribute.String("user.id", userID), attribute.String("torrent.id", torrentID))
+
+	var torrent models.Torrent
+	if err := db.DB.Where("id = ? AND user_id = ?", torrentID, userID).First(&torrent).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "torrent not found"})
+		return
+	}
+
+	files, err := services.QBClient.GetTorrentFiles(torrent.Hash)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "failed to fetch torrent files"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"files": files})
 }
 
 // ── helpers ──────────────────────────────────────────────────────────────────

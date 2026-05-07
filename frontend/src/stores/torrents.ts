@@ -23,6 +23,12 @@ export interface Torrent {
   num_leechs: number
 }
 
+export interface TorrentFile {
+  name: string
+  size: number
+  progress: number
+}
+
 export const useTorrentStore = defineStore('torrents', () => {
   const torrents = ref<Torrent[]>([])
   const loading = ref(false)
@@ -77,5 +83,10 @@ export const useTorrentStore = defineStore('torrents', () => {
     if (t) t.status = 'downloading'
   }
 
-  return { torrents, loading, error, fetchTorrents, addMagnet, addFile, deleteTorrent, pauseTorrent, resumeTorrent }
+  async function fetchTorrentFiles(id: string): Promise<TorrentFile[]> {
+    const { data } = await api.get(`/torrents/${id}/files`)
+    return data.files ?? []
+  }
+
+  return { torrents, loading, error, fetchTorrents, addMagnet, addFile, deleteTorrent, pauseTorrent, resumeTorrent, fetchTorrentFiles }
 })

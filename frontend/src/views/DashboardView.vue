@@ -29,8 +29,8 @@ onUnmounted(() => clearInterval(pollInterval))
     <!-- Header bar -->
     <div class="flex items-center justify-between mb-6">
       <div>
-        <h2 class="text-xl font-semibold text-white">My Torrents</h2>
-        <p class="text-gray-400 text-sm mt-0.5">{{ torrentStore.torrents.length }} torrents</p>
+        <h2 class="text-xl font-semibold text-gray-900 dark:text-white">My Torrents</h2>
+        <p class="text-gray-500 dark:text-gray-400 text-sm mt-0.5">{{ torrentStore.torrents.length }} torrents</p>
       </div>
       <button
         @click="showModal = true"
@@ -57,8 +57,8 @@ onUnmounted(() => clearInterval(pollInterval))
 
     <div v-else-if="!torrentStore.torrents.length" class="text-center py-20">
       <div class="text-5xl mb-4">🌱</div>
-      <p class="text-gray-400 text-lg">No torrents yet.</p>
-      <p class="text-gray-600 text-sm mt-1">Add a magnet link or .torrent file to get started.</p>
+      <p class="text-gray-500 dark:text-gray-400 text-lg">No torrents yet.</p>
+      <p class="text-gray-400 dark:text-gray-600 text-sm mt-1">Add a magnet link or .torrent file to get started.</p>
     </div>
 
     <div v-else class="space-y-3">

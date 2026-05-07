@@ -24,15 +24,15 @@ onMounted(() => filesStore.listFiles('/'))
   <AppLayout>
     <div class="flex items-center justify-between mb-6">
       <div>
-        <h2 class="text-xl font-semibold text-white">Files</h2>
+        <h2 class="text-xl font-semibold text-gray-900 dark:text-white">Files</h2>
         <!-- Breadcrumbs -->
-        <nav class="flex items-center gap-1 mt-1 text-sm text-gray-400">
+        <nav class="flex items-center gap-1 mt-1 text-sm text-gray-500 dark:text-gray-400">
           <template v-for="(crumb, i) in breadcrumbs" :key="crumb.path">
-            <span v-if="i > 0" class="text-gray-600">/</span>
+            <span v-if="i > 0" class="text-gray-400 dark:text-gray-600">/</span>
             <button
               @click="filesStore.listFiles(crumb.path)"
-              class="hover:text-indigo-400 transition-colors"
-              :class="i === breadcrumbs.length - 1 ? 'text-white font-medium' : ''"
+              class="hover:text-indigo-500 dark:hover:text-indigo-400 transition-colors"
+              :class="i === breadcrumbs.length - 1 ? 'text-gray-900 dark:text-white font-medium' : ''"
             >
               {{ crumb.label }}
             </button>
