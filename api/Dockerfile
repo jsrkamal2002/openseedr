@@ -1,6 +1,9 @@
 # ── Stage 1: build ────────────────────────────────────────────────────────────
 FROM golang:1.25-alpine AS builder
 
+# TARGETARCH is a BuildKit built-in (e.g. amd64, arm64) — no need to set manually
+ARG TARGETARCH
+
 # Install git and ca-certs (needed for go get over HTTPS)
 RUN apk add --no-cache git ca-certificates tzdata
 
@@ -12,7 +15,7 @@ RUN go mod download
 
 # Copy source and build a statically linked binary with security hardening
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} \
     go build \
       -trimpath \
       -ldflags="-s -w -extldflags '-static'" \
