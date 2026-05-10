@@ -17,3 +17,6 @@ frontend/dist/
 
 # Docker volumes / local data
 data/
+
+# Graphify knowledge graph output
+graphify-out/

@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useTorrentStore } from '@/stores/torrents'
-import { useFilesStore } from '@/stores/files'
 import { useAuthStore } from '@/stores/auth'
 import AppLayout from '@/components/AppLayout.vue'
 import TorrentCard from '@/components/TorrentCard.vue'
@@ -9,14 +8,15 @@ import AddTorrentModal from '@/components/AddTorrentModal.vue'
 import StorageBar from '@/components/StorageBar.vue'
 
 const torrentStore = useTorrentStore()
-const filesStore = useFilesStore()
 const auth = useAuthStore()
 const showModal = ref(false)
 
 let pollInterval: ReturnType<typeof setInterval>
 
 onMounted(async () => {
-  await Promise.all([torrentStore.fetchTorrents(), filesStore.fetchStorageInfo()])
+  // Refresh user (includes real storage_used computed from disk) and torrents
+  // concurrently so the storage bar shows an accurate balance on every visit.
+  await Promise.all([torrentStore.fetchTorrents(), auth.fetchMe()])
   // Poll every 5 seconds to refresh torrent progress
   pollInterval = setInterval(() => torrentStore.fetchTorrents(), 5000)
 })
@@ -45,7 +45,7 @@ onUnmounted(() => clearInterval(pollInterval))
 
     <!-- Storage bar -->
     <StorageBar
-      :used="filesStore.storageUsed"
+      :used="auth.user?.storage_used ?? 0"
       :quota="auth.user?.storage_quota ?? 10737418240"
       class="mb-6"
     />

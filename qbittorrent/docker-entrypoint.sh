@@ -8,6 +8,12 @@ set -e
 # can create per-user subdirectories. Pre-existing volumes may not have this mode.
 chmod 1777 /data 2>/dev/null || true
 
+# Fix permissions on existing download content so the API user (different UID)
+# can delete files and directories that qBittorrent created.
+# BusyBox chmod -R exits early when it hits dirs it doesn't own, so we use
+# find to target only qbt-owned entries and chmod them individually.
+find /data -user qbt \( -type d -o -type f \) -exec chmod a+rwX {} + 2>/dev/null || true
+
 CONFIG_FILE="/config/qBittorrent/config/qBittorrent.conf"
 
 mkdir -p "$(dirname "$CONFIG_FILE")"
@@ -50,5 +56,10 @@ if ! grep -qs "CSRFProtection=false" "$CONFIG_FILE" 2>/dev/null; then
     printf '\nWebUI\\CSRFProtection=false\n' >> "$CONFIG_FILE"
     echo "[entrypoint] CSRFProtection disabled"
 fi
+
+# Set permissive umask so qBittorrent creates files as 0666 and directories as
+# 0777. This allows the API container (running as a different UID) to delete
+# downloaded content without requiring root or CAP_FOWNER.
+umask 0000
 
 exec "$@"

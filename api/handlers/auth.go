@@ -146,6 +146,13 @@ func Me(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "user not found", "trace_id": observability.TraceID(ctx)})
 		return
 	}
+
+	// StorageUsed in the DB is never updated; compute the real value from disk
+	// so the client always gets an accurate balance.
+	if used, err := services.DirSize(services.UserStoragePath(userID)); err == nil {
+		user.StorageUsed = used
+	}
+
 	c.JSON(http.StatusOK, user)
 }
 

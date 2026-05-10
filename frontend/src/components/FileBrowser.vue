@@ -20,6 +20,17 @@ function fmtDate(unix: number) {
 function open(item: FileItem) {
   if (item.is_dir) store.listFiles(item.path)
 }
+
+async function confirmDelete(item: FileItem) {
+  const label = item.is_dir ? 'folder' : 'file'
+  if (!confirm(`Delete ${label} "${item.name}"? This cannot be undone.`)) return
+  store.error = null
+  try {
+    await store.deleteFile(item.path)
+  } catch {
+    // error is already set in the store; the banner below will show it
+  }
+}
 </script>
 
 <template>
@@ -84,7 +95,7 @@ function open(item: FileItem) {
                       d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
                   </svg>
                 </button>
-                <button @click="store.deleteFile(item.path)"
+                <button @click="confirmDelete(item)"
                   title="Delete"
                   class="p-1.5 rounded-md text-gray-400 hover:text-red-500 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
                   <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

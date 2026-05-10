@@ -44,7 +44,7 @@ func ListTorrents(c *gin.Context) {
 	span.SetAttributes(attribute.String("user.id", userID))
 
 	var torrents []models.Torrent
-	if err := db.DB.Where("user_id = ?", userID).Order("created_at desc").Find(&torrents).Error; err != nil {
+	if err := db.DB.Where("user_id = ? AND status != ?", userID, models.StatusWishlist).Order("created_at desc").Find(&torrents).Error; err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "db error")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch torrents", "trace_id": observability.TraceID(ctx)})
@@ -118,12 +118,29 @@ func AddMagnet(c *gin.Context) {
 		return
 	}
 
+	hash := extractMagnetHash(req.MagnetURL)
+	name := extractMagnetName(req.MagnetURL)
+	if name == "" {
+		name = hash
+	}
+	savePath := services.UserStoragePath(userID)
+
+	// If quota is exceeded, save to wishlist instead of returning 403.
 	if err := checkStorageQuota(ctx, userID); err != nil {
-		c.JSON(http.StatusForbidden, gin.H{"error": err.Error(), "trace_id": observability.TraceID(ctx)})
+		torrent, dbErr := upsertWishlistMagnet(userID, hash, name, savePath, req.MagnetURL)
+		if dbErr != nil {
+			span.RecordError(dbErr)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to save to wishlist", "trace_id": observability.TraceID(ctx)})
+			return
+		}
+		slog.InfoContext(ctx, "magnet wishlisted (quota full)", "user_id", userID, "hash", hash)
+		c.JSON(http.StatusAccepted, gin.H{
+			"wishlisted": true,
+			"message":    "Storage quota is full. Torrent has been saved to your wishlist and will be added automatically once space is available.",
+			"torrent":    torrent,
+		})
 		return
 	}
-
-	savePath := services.UserStoragePath(userID)
 
 	if err := services.QBClient.AddMagnet(req.MagnetURL, savePath); err != nil {
 		span.RecordError(err)
@@ -132,43 +149,34 @@ func AddMagnet(c *gin.Context) {
 		return
 	}
 
-	// Extract hash from magnet URI (urn:btih:<hash>)
-	hash := extractMagnetHash(req.MagnetURL)
-	name := extractMagnetName(req.MagnetURL)
-	if name == "" {
-		name = hash
-	}
-
 	// Restore or create: use Unscoped so we can see soft-deleted records too.
-	// If the user previously had this torrent (active, errored, or deleted),
-	// restore it to queued rather than failing or silently disappearing.
+	// If the user previously had this torrent (active, errored, deleted, or
+	// wishlisted), restore it to queued.
 	var torrent models.Torrent
 	existing := db.DB.Unscoped().
 		Where("user_id = ? AND hash = ?", userID, hash).
 		First(&torrent)
 
 	if existing.Error == nil {
-		// Record exists (possibly soft-deleted) — restore and reset to queued.
-		// Also clear progress/downloaded/size so the card doesn't flash stale
-		// "completed" state before the first qBittorrent sync arrives.
 		now := time.Now()
 		if err := db.DB.Unscoped().Model(&torrent).Updates(map[string]interface{}{
-			"name":       name,
-			"save_path":  savePath,
-			"status":     models.StatusQueued,
-			"progress":   0,
-			"downloaded": 0,
-			"size":       0,
-			"added_at":   now,
-			"updated_at": now,
-			"deleted_at": nil,
+			"name":         name,
+			"save_path":    savePath,
+			"status":       models.StatusQueued,
+			"progress":     0,
+			"downloaded":   0,
+			"size":         0,
+			"magnet_url":   "",
+			"torrent_data": nil,
+			"added_at":     now,
+			"updated_at":   now,
+			"deleted_at":   nil,
 		}).Error; err != nil {
 			span.RecordError(err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to record torrent", "trace_id": observability.TraceID(ctx)})
 			return
 		}
 	} else {
-		// No existing record — create fresh.
 		torrent = models.Torrent{
 			UserID:   uuid.MustParse(userID),
 			Hash:     hash,
@@ -186,10 +194,41 @@ func AddMagnet(c *gin.Context) {
 
 	observability.RecordTorrentAdded(ctx, userID)
 	slog.InfoContext(ctx, "magnet added", "user_id", userID, "hash", hash)
-	// Reload to ensure the response reflects the reset values (progress/downloaded/size = 0),
-	// not the stale pre-update struct loaded from the DB earlier.
 	db.DB.Unscoped().First(&torrent, torrent.ID)
 	c.JSON(http.StatusCreated, gin.H{"torrent": torrent})
+}
+
+// upsertWishlistMagnet creates or updates a wishlist record for a magnet link.
+func upsertWishlistMagnet(userID, hash, name, savePath, magnetURL string) (models.Torrent, error) {
+	var torrent models.Torrent
+	existing := db.DB.Unscoped().Where("user_id = ? AND hash = ?", userID, hash).First(&torrent)
+	now := time.Now()
+	if existing.Error == nil {
+		err := db.DB.Unscoped().Model(&torrent).Updates(map[string]interface{}{
+			"name":         name,
+			"save_path":    savePath,
+			"status":       models.StatusWishlist,
+			"magnet_url":   magnetURL,
+			"torrent_data": nil,
+			"progress":     0,
+			"downloaded":   0,
+			"size":         0,
+			"added_at":     now,
+			"updated_at":   now,
+			"deleted_at":   nil,
+		})
+		return torrent, err.Error
+	}
+	torrent = models.Torrent{
+		UserID:    uuid.MustParse(userID),
+		Hash:      hash,
+		Name:      name,
+		SavePath:  savePath,
+		Status:    models.StatusWishlist,
+		MagnetURL: magnetURL,
+		AddedAt:   now,
+	}
+	return torrent, db.DB.Create(&torrent).Error
 }
 
 // AddTorrentFile handles POST /api/v1/torrents/file
@@ -199,11 +238,6 @@ func AddTorrentFile(c *gin.Context) {
 
 	userID := middleware.GetUserID(c)
 	span.SetAttributes(attribute.String("user.id", userID))
-
-	if err := checkStorageQuota(ctx, userID); err != nil {
-		c.JSON(http.StatusForbidden, gin.H{"error": err.Error(), "trace_id": observability.TraceID(ctx)})
-		return
-	}
 
 	fileHeader, err := c.FormFile("torrent")
 	if err != nil {
@@ -230,6 +264,49 @@ func AddTorrentFile(c *gin.Context) {
 	}
 
 	savePath := services.UserStoragePath(userID)
+
+	// Extract the real info-hash from the .torrent bytes so we can match this
+	// record against qBittorrent's live data later.  Fall back to a unique
+	// placeholder only if parsing fails (malformed file).
+	infoHash, hashErr := services.ExtractInfoHash(fileBytes)
+	if hashErr != nil {
+		slog.WarnContext(ctx, "could not extract info hash", "filename", fileHeader.Filename, "error", hashErr)
+		infoHash = "pending-" + uuid.New().String()
+	}
+
+	// ── Derive a human-readable name from the torrent metadata ────────────────
+	// Strip the .torrent extension from the filename as a reasonable default.
+	torrentName := fileHeader.Filename
+	if len(torrentName) > 8 && torrentName[len(torrentName)-8:] == ".torrent" {
+		torrentName = torrentName[:len(torrentName)-8]
+	}
+
+	// If quota is exceeded, save the raw .torrent bytes to the wishlist so
+	// they can be submitted to qBittorrent once space becomes available.
+	if err := checkStorageQuota(ctx, userID); err != nil {
+		torrent := &models.Torrent{
+			UserID:      uuid.MustParse(userID),
+			Hash:        infoHash,
+			Name:        torrentName,
+			SavePath:    savePath,
+			Status:      models.StatusWishlist,
+			TorrentData: fileBytes,
+			AddedAt:     time.Now(),
+		}
+		if dbErr := db.DB.Create(torrent).Error; dbErr != nil {
+			span.RecordError(dbErr)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to save to wishlist", "trace_id": observability.TraceID(ctx)})
+			return
+		}
+		slog.InfoContext(ctx, "torrent file wishlisted (quota full)", "user_id", userID, "filename", fileHeader.Filename)
+		c.JSON(http.StatusAccepted, gin.H{
+			"wishlisted": true,
+			"message":    "Storage quota is full. Torrent has been saved to your wishlist and will be added automatically once space is available.",
+			"torrent":    torrent,
+		})
+		return
+	}
+
 	if err := services.QBClient.AddTorrentFile(fileBytes, fileHeader.Filename, savePath); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "qbt error")
@@ -237,22 +314,47 @@ func AddTorrentFile(c *gin.Context) {
 		return
 	}
 
-	torrent := &models.Torrent{
-		UserID:   uuid.MustParse(userID),
-		Hash:     "pending", // will be updated by sync
-		Name:     fileHeader.Filename,
-		SavePath: savePath,
-		Status:   models.StatusQueued,
-		AddedAt:  time.Now(),
-	}
-	if err := db.DB.Create(torrent).Error; err != nil {
-		span.RecordError(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to record torrent", "trace_id": observability.TraceID(ctx)})
-		return
+	// Restore or create the DB record using the real hash so that the live-
+	// stats sync (which also uses the hash) works immediately.
+	var torrent models.Torrent
+	existing := db.DB.Unscoped().Where("user_id = ? AND hash = ?", userID, infoHash).First(&torrent)
+	now := time.Now()
+	if existing.Error == nil {
+		if err := db.DB.Unscoped().Model(&torrent).Updates(map[string]interface{}{
+			"name":         torrentName,
+			"save_path":    savePath,
+			"status":       models.StatusQueued,
+			"progress":     0,
+			"downloaded":   0,
+			"size":         0,
+			"torrent_data": nil,
+			"added_at":     now,
+			"updated_at":   now,
+			"deleted_at":   nil,
+		}).Error; err != nil {
+			span.RecordError(err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to record torrent", "trace_id": observability.TraceID(ctx)})
+			return
+		}
+	} else {
+		torrent = models.Torrent{
+			UserID:   uuid.MustParse(userID),
+			Hash:     infoHash,
+			Name:     torrentName,
+			SavePath: savePath,
+			Status:   models.StatusQueued,
+			AddedAt:  now,
+		}
+		if err := db.DB.Create(&torrent).Error; err != nil {
+			span.RecordError(err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to record torrent", "trace_id": observability.TraceID(ctx)})
+			return
+		}
 	}
 
 	observability.RecordTorrentAdded(ctx, userID)
-	slog.InfoContext(ctx, "torrent file added", "user_id", userID, "filename", fileHeader.Filename)
+	slog.InfoContext(ctx, "torrent file added", "user_id", userID, "hash", infoHash, "filename", fileHeader.Filename)
+	db.DB.Unscoped().First(&torrent, torrent.ID)
 	c.JSON(http.StatusCreated, gin.H{"torrent": torrent})
 }
 
@@ -411,20 +513,43 @@ func checkStorageQuota(ctx context.Context, userID string) error {
 
 func mapQBState(state string) models.TorrentStatus {
 	switch state {
-	case "downloading", "metaDL", "checkingDL":
+	// ── Actively downloading ───────────────────────────────────────────────────
+	case "downloading",        // transferring data
+		"metaDL",              // fetching metadata (magnet)
+		"checkingDL",          // hash-checking partially-downloaded data
+		"stalledDL",           // downloading but no active peer connections
+		"allocating":          // allocating disk space before download starts
 		return models.StatusDownloading
-	case "uploading", "stalledUP", "queuedUP", "forcedUP":
+
+	// ── Seeding (upload only) ─────────────────────────────────────────────────
+	case "uploading",          // actively uploading
+		"stalledUP",           // seeding but no active peer connections
+		"queuedUP",            // queued, waiting for upload slot
+		"forcedUP",            // forced upload (ignores queue limit)
+		"checkingUP",          // hash-checking completed data before seeding
+		"moving":              // relocating completed data to a new path
 		return models.StatusSeeding
-	case "pausedDL", "pausedUP":
+
+	// ── Paused ────────────────────────────────────────────────────────────────
+	// qBittorrent v4: pausedDL / pausedUP
+	// qBittorrent v5: stoppedDL / stoppedUP  (renamed in v5)
+	case "pausedDL", "pausedUP", "stoppedDL", "stoppedUP":
 		return models.StatusPaused
-	case "error", "missingFiles", "unknown":
+
+	// ── Error ─────────────────────────────────────────────────────────────────
+	case "error", "missingFiles":
 		return models.StatusError
-	case "queuedDL":
+
+	// ── Queued / startup ──────────────────────────────────────────────────────
+	case "queuedDL",           // queued, waiting for download slot
+		"checkingResumeData",  // verifying resume data on qBT startup
+		"unknown":             // qBittorrent internal unknown state
 		return models.StatusQueued
+
+	// ── Anything else ─────────────────────────────────────────────────────────
+	// Default to queued (not completed) so a new torrent never jumps
+	// unexpectedly to a terminal state when qBittorrent adds a new state.
 	default:
-		if state != "" {
-			return models.StatusCompleted
-		}
 		return models.StatusQueued
 	}
 }
@@ -433,7 +558,10 @@ func extractMagnetHash(magnet string) string {
 	u, err := url.Parse(magnet)
 	if err == nil {
 		if xt := u.Query().Get("xt"); strings.HasPrefix(xt, "urn:btih:") {
-			return strings.TrimPrefix(xt, "urn:btih:")
+			// qBittorrent stores and returns hashes in lowercase hex.
+			// Magnet links may carry the hash as uppercase hex or base32;
+			// normalise to lowercase so the live-stats lookup always matches.
+			return strings.ToLower(strings.TrimPrefix(xt, "urn:btih:"))
 		}
 	}
 	return uuid.New().String()

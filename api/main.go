@@ -98,15 +98,32 @@ func main() {
 			torrents.POST("/:id/resume", handlers.ResumeTorrent)
 		}
 
+		// Wishlist – torrents queued while storage quota was full
+		wishlist := protected.Group("/wishlist")
+		{
+			wishlist.GET("", handlers.ListWishlist)
+			wishlist.DELETE("/:id", handlers.RemoveWishlistItem)
+			wishlist.POST("/:id/promote", handlers.PromoteWishlistItem)
+		}
+
 		// Files
 		files := protected.Group("/files")
 		{
 			files.GET("", handlers.ListFiles)
-			files.GET("/download", handlers.DownloadFile)
 			files.DELETE("", handlers.DeleteFileHandler)
 			files.GET("/storage", handlers.StorageInfo)
 		}
+
+		// Download uses its own middleware so the JWT can be supplied either as
+		// the Authorization header OR as a ?token= query parameter.  The latter
+		// lets the browser stream the file natively without the fetch-blob trick
+		// that loses the user-gesture context and buffers the whole file in RAM.
+		v1.GET("/files/download", middleware.AuthFlexible(), handlers.DownloadFile)
 	}
+
+	// ── Background workers ────────────────────────────────────────────────────
+	// Auto-promote wishlist items whenever a user's storage quota is freed.
+	go handlers.AutoPromoteWishlist()
 
 	// ── HTTP server with graceful shutdown ────────────────────────────────────
 	port := observability.GetEnvOrDefault("PORT", "8080")

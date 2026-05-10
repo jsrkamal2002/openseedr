@@ -32,23 +32,32 @@ export const useFilesStore = defineStore('files', () => {
   }
 
   async function deleteFile(path: string) {
-    await api.delete('/files', { params: { path } })
-    files.value = files.value.filter((f) => f.path !== path)
+    try {
+      await api.delete('/files', { params: { path } })
+      files.value = files.value.filter((f) => f.path !== path)
+    } catch (e: any) {
+      error.value = e.response?.data?.error ?? 'Failed to delete file'
+      throw e
+    }
   }
 
-  function downloadFile(path: string) {
-    const token = localStorage.getItem('token')
-    const url = `/api/v1/files/download?path=${encodeURIComponent(path)}`
-    // Use anchor trick to trigger download with auth header via fetch+blob
-    fetch(url, { headers: { Authorization: `Bearer ${token}` } })
-      .then((res) => res.blob())
-      .then((blob) => {
-        const a = document.createElement('a')
-        a.href = URL.createObjectURL(blob)
-        a.download = path.split('/').pop() ?? 'download'
-        a.click()
-        URL.revokeObjectURL(a.href)
-      })
+  async function downloadFile(path: string) {
+    // Build a direct download URL with the JWT as a query parameter.
+    // This lets the browser stream the file natively — no fetch+blob, no
+    // memory buffering, and no user-gesture-context loss after await calls.
+    const token = localStorage.getItem('token') ?? ''
+    const url =
+      `/api/v1/files/download` +
+      `?path=${encodeURIComponent(path)}` +
+      `&token=${encodeURIComponent(token)}`
+
+    const a = document.createElement('a')
+    a.href = url
+    a.download = path.split('/').pop() ?? 'download'
+    a.style.display = 'none'
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
   }
 
   async function fetchStorageInfo() {

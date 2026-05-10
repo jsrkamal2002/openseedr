@@ -38,6 +38,12 @@ router.beforeEach(async (to) => {
   if (!to.meta.public && !auth.isAuthenticated) {
     return { name: 'Login' }
   }
+  // Restore user data after a page refresh (Pinia state is not persisted).
+  // The token survives in localStorage but auth.user is lost — call fetchMe()
+  // so the sidebar and storage balance are populated immediately.
+  if (auth.isAuthenticated && !auth.user) {
+    await auth.fetchMe()
+  }
   if (to.meta.public && auth.isAuthenticated) {
     return { name: 'Dashboard' }
   }

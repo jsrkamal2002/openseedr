@@ -239,25 +239,35 @@ func (c *QBittorrentClient) DeleteTorrent(hash string, deleteFiles bool) error {
 func (c *QBittorrentClient) PauseTorrent(hash string) error {
 	data := url.Values{}
 	data.Set("hashes", hash)
-	resp, err := c.doRequest("POST", "/api/v2/torrents/pause",
+	// qBittorrent v5 renamed pause→stop. Use the new endpoint.
+	resp, err := c.doRequest("POST", "/api/v2/torrents/stop",
 		strings.NewReader(data.Encode()),
 		"application/x-www-form-urlencoded")
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("qBittorrent stop failed (HTTP %d): %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
 	return nil
 }
 
 func (c *QBittorrentClient) ResumeTorrent(hash string) error {
 	data := url.Values{}
 	data.Set("hashes", hash)
-	resp, err := c.doRequest("POST", "/api/v2/torrents/resume",
+	// qBittorrent v5 renamed resume→start. Use the new endpoint.
+	resp, err := c.doRequest("POST", "/api/v2/torrents/start",
 		strings.NewReader(data.Encode()),
 		"application/x-www-form-urlencoded")
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("qBittorrent start failed (HTTP %d): %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
 	return nil
 }

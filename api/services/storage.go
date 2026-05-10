@@ -128,12 +128,15 @@ func OpenFile(userID, subPath string) (*os.File, os.FileInfo, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	defer root.Close()
 
 	clean := rootRelPath(subPath)
 
-	// G304 resolved: os.Root.Open cannot escape the root directory
+	// G304 resolved: os.Root.Open cannot escape the root directory.
+	// root.Open returns an independent *os.File with its own fd, so we close
+	// the root immediately after opening to avoid holding the directory fd open
+	// for the duration of the (potentially long) file transfer.
 	f, err := root.Open(clean)
+	root.Close() // close root dir fd; the file fd is independent
 	if err != nil {
 		return nil, nil, err
 	}
