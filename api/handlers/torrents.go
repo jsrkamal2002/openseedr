@@ -72,30 +72,47 @@ func ListTorrents(c *gin.Context) {
 				liveMap[qt.Hash] = qt
 			}
 			for i, t := range torrents {
-				if qt, ok := liveMap[t.Hash]; ok {
-					responses[i].Progress = qt.Progress
-					responses[i].Downloaded = qt.Downloaded
-					responses[i].Size = qt.Size
-					responses[i].Status = mapQBState(qt.State)
-					responses[i].DownloadSpeed = qt.DownloadSpeed
-					responses[i].UploadSpeed = qt.UploadSpeed
-					responses[i].Eta = qt.Eta
-					responses[i].NumSeeds = qt.NumSeeds
-					responses[i].NumLeechs = qt.NumLeechs
+			if qt, ok := liveMap[t.Hash]; ok {
+				liveStatus := mapQBState(qt.State)
+				responses[i].Progress = qt.Progress
+				responses[i].Downloaded = qt.Downloaded
+				responses[i].Size = qt.Size
+
+				// Grace-period guard: if the user just issued a pause or resume
+				// command, qBittorrent may not have applied it yet by the time
+				// the next poll fires. Keep the DB status for up to 10 seconds
+				// when there is a pause-vs-active conflict, so the UI doesn't
+				// flicker back to the previous state on the very next poll.
+				recentlyUpdated := time.Since(t.UpdatedAt) < 10*time.Second
+				pauseConflict := (t.Status == models.StatusPaused && liveStatus != models.StatusPaused) ||
+					(t.Status != models.StatusPaused && liveStatus == models.StatusPaused)
+				if recentlyUpdated && pauseConflict {
+					responses[i].Status = t.Status
+				} else {
+					responses[i].Status = liveStatus
 				}
+
+				responses[i].DownloadSpeed = qt.DownloadSpeed
+				responses[i].UploadSpeed = qt.UploadSpeed
+				responses[i].Eta = qt.Eta
+				responses[i].NumSeeds = qt.NumSeeds
+				responses[i].NumLeechs = qt.NumLeechs
 			}
-			// Persist updated stats async (best-effort)
-			go func() {
-				for _, r := range responses {
-					db.DB.Model(&r.Torrent).Updates(map[string]interface{}{
-						"progress":   r.Progress,
-						"downloaded": r.Downloaded,
-						"size":       r.Size,
-						"status":     r.Status,
-						"updated_at": time.Now(),
-					})
-				}
-			}()
+		}
+		// Persist updated stats async (best-effort).
+		// Use UpdateColumns (not Updates) so GORM does not auto-reset updated_at
+		// on every poll — updated_at must only change on real user actions
+		// (pause, resume, add) so the grace-period guard above works correctly.
+		go func() {
+			for _, r := range responses {
+				db.DB.Model(&r.Torrent).UpdateColumns(map[string]interface{}{
+					"progress":   r.Progress,
+					"downloaded": r.Downloaded,
+					"size":       r.Size,
+					"status":     r.Status,
+				})
+			}
+		}()
 		}
 	}
 
