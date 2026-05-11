@@ -12,13 +12,14 @@ api.interceptors.request.use((config) => {
   return config
 })
 
-// Redirect to login on 401
+// Redirect to login on 401; surface other errors
 api.interceptors.response.use(
   (res) => res,
   (err) => {
     if (err.response?.status === 401) {
       localStorage.removeItem('token')
-      window.location.href = '/login'
+      // Use replace so the back button doesn't loop back to a protected route.
+      window.location.replace('/login')
     }
     return Promise.reject(err)
   },

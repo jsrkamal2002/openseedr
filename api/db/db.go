@@ -2,7 +2,7 @@ package db
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 
 	"github.com/openseedr/api/models"
@@ -28,10 +28,11 @@ func Connect() {
 		Logger: logger.Default.LogMode(logger.Info),
 	})
 	if err != nil {
-		log.Fatalf("Failed to connect to database: %v", err)
+		slog.Error("failed to connect to database", "error", err)
+		os.Exit(1)
 	}
 
-	log.Println("Database connected successfully")
+	slog.Info("database connected")
 	migrate()
 }
 
@@ -40,14 +41,15 @@ func migrate() {
 	// AutoMigrate will not remove it automatically; we must do it explicitly once.
 	DB.Exec(`DROP INDEX IF EXISTS idx_torrents_hash`)
 
-	err := DB.AutoMigrate(
+	if err := DB.AutoMigrate(
 		&models.User{},
 		&models.Torrent{},
-	)
-	if err != nil {
-		log.Fatalf("Failed to run migrations: %v", err)
+	); err != nil {
+		slog.Error("failed to run migrations", "error", err)
+		os.Exit(1)
 	}
-	log.Println("Database migrations complete")
+
+	slog.Info("database migrations complete")
 }
 
 func getEnvOrDefault(key, def string) string {

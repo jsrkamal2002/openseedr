@@ -13,21 +13,30 @@ const emit = defineEmits<{
 const torrentStore = useTorrentStore()
 
 const statusColors: Record<string, string> = {
-  queued: 'text-gray-400',
+  queued:      'text-gray-400',
   downloading: 'text-blue-500 dark:text-blue-400',
-  seeding: 'text-green-500 dark:text-green-400',
-  paused: 'text-yellow-500 dark:text-yellow-400',
-  completed: 'text-emerald-500 dark:text-emerald-400',
-  error: 'text-red-500 dark:text-red-400',
+  seeding:     'text-green-500 dark:text-green-400',
+  paused:      'text-yellow-500 dark:text-yellow-400',
+  completed:   'text-emerald-500 dark:text-emerald-400',
+  error:       'text-red-500 dark:text-red-400',
 }
 
 const barColors: Record<string, string> = {
-  queued: 'bg-gray-400 dark:bg-gray-600',
+  queued:      'bg-gray-400 dark:bg-gray-600',
   downloading: 'bg-blue-500',
-  seeding: 'bg-green-500',
-  paused: 'bg-yellow-500',
-  completed: 'bg-emerald-500',
-  error: 'bg-red-500',
+  seeding:     'bg-green-500',
+  paused:      'bg-yellow-500',
+  completed:   'bg-emerald-500',
+  error:       'bg-red-500',
+}
+
+const statusLabels: Record<string, string> = {
+  queued:      'Queued',
+  downloading: 'Downloading',
+  seeding:     'Seeding',
+  paused:      'Paused',
+  completed:   'Completed',
+  error:       'Error',
 }
 
 function formatBytes(bytes: number): string {
@@ -59,13 +68,20 @@ function basename(path: string): string {
   return path.split('/').pop() ?? path
 }
 
-const canPause = (s: Torrent['status']) => s === 'downloading' || s === 'seeding'
+const canPause  = (s: Torrent['status']) => s === 'downloading' || s === 'seeding'
 const canResume = (s: Torrent['status']) => s === 'paused'
 const showSpeeds = (t: Torrent) => t.status === 'downloading' || t.status === 'seeding'
 
-// ── file list expand/collapse ─────────────────────────────────────────────────
-const expanded = ref(false)
-const files = ref<TorrentFile[]>([])
+// ── Delete confirmation ───────────────────────────────────────────────────────
+const confirmingDelete = ref(false)
+
+function requestDelete() { confirmingDelete.value = true }
+function cancelDelete()  { confirmingDelete.value = false }
+function confirmDelete() { confirmingDelete.value = false; emit('delete') }
+
+// ── File list expand/collapse ─────────────────────────────────────────────────
+const expanded     = ref(false)
+const files        = ref<TorrentFile[]>([])
 const loadingFiles = ref(false)
 
 async function loadFiles() {
@@ -101,32 +117,44 @@ watch(() => props.torrent.progress, () => {
         <button v-if="canPause(torrent.status)" @click="emit('pause')"
           title="Pause"
           class="p-1.5 rounded-md text-gray-400 hover:text-yellow-500 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
-          <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+          <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
             <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>
           </svg>
+          <span class="sr-only">Pause</span>
         </button>
         <button v-if="canResume(torrent.status)" @click="emit('resume')"
           title="Resume"
           class="p-1.5 rounded-md text-gray-400 hover:text-green-500 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
-          <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+          <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
             <path d="M8 5v14l11-7z"/>
           </svg>
+          <span class="sr-only">Resume</span>
         </button>
-        <button @click="emit('delete')"
+
+        <!-- Inline delete confirmation instead of window.confirm -->
+        <template v-if="confirmingDelete">
+          <span class="text-xs text-gray-500 dark:text-gray-400">Delete?</span>
+          <button @click="confirmDelete"
+            class="px-2 py-1 rounded text-xs bg-red-600 hover:bg-red-500 text-white transition-colors">Yes</button>
+          <button @click="cancelDelete"
+            class="px-2 py-1 rounded text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors">No</button>
+        </template>
+        <button v-else @click="requestDelete"
           title="Delete"
           class="p-1.5 rounded-md text-gray-400 hover:text-red-500 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
               d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
           </svg>
+          <span class="sr-only">Delete</span>
         </button>
       </div>
     </div>
 
     <!-- Row 2: status + size + progress % -->
     <div class="flex items-center gap-3 mt-1.5 text-xs flex-wrap">
-      <span :class="statusColors[torrent.status] ?? 'text-gray-400'" class="capitalize font-medium">
-        {{ torrent.status }}
+      <span :class="statusColors[torrent.status] ?? 'text-gray-400'" class="font-medium">
+        {{ statusLabels[torrent.status] ?? torrent.status }}
       </span>
       <span class="text-gray-500 dark:text-gray-500">{{ formatBytes(torrent.downloaded) }} / {{ formatBytes(torrent.size) }}</span>
       <span v-if="torrent.status === 'downloading'" class="text-gray-500 dark:text-gray-500">

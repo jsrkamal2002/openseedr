@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"path/filepath"
+	"strconv"
 
 	"github.com/openseedr/api/middleware"
 	"github.com/openseedr/api/observability"
@@ -90,8 +91,13 @@ func DownloadFile(c *gin.Context) {
 		"size", info.Size(),
 	)
 
-	c.Header("Content-Disposition", `attachment; filename="`+filepath.Base(subPath)+`"`)
-	c.Header("Content-Length", itoa(info.Size()))
+	// Use RFC 5987 encoded filename to handle unicode/special characters safely.
+	safeName := filepath.Base(subPath)
+	c.Header("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, safeName))
+	c.Header("Content-Length", strconv.FormatInt(info.Size(), 10))
+	// Prevent the browser from sniffing the content type away from octet-stream,
+	// which could cause the browser to render HTML/SVG files inline.
+	c.Header("X-Content-Type-Options", "nosniff")
 	c.DataFromReader(http.StatusOK, info.Size(), "application/octet-stream", f, nil)
 }
 
@@ -151,6 +157,3 @@ func StorageInfo(c *gin.Context) {
 	})
 }
 
-func itoa(n int64) string {
-	return fmt.Sprintf("%d", n)
-}

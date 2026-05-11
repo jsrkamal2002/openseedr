@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -57,6 +58,7 @@ func main() {
 	r.Use(observability.OtelMiddleware())      // creates span per request
 	r.Use(observability.MetricsMiddleware())   // records HTTP metrics + access log
 	r.Use(corsMiddleware())
+	r.Use(securityHeadersMiddleware())
 
 	// ── Health & metrics endpoints ────────────────────────────────────────────
 	r.GET("/healthz", func(c *gin.Context) {
@@ -171,5 +173,19 @@ func corsMiddleware() gin.HandlerFunc {
 			return
 		}
 		c.Next()
+	}
+}
+
+// securityHeadersMiddleware adds baseline security headers to every response.
+func securityHeadersMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Next()
+		// Skip for download endpoint — Content-Disposition already set there.
+		if strings.HasPrefix(c.Request.URL.Path, "/api/v1/files/download") {
+			return
+		}
+		c.Header("X-Content-Type-Options", "nosniff")
+		c.Header("X-Frame-Options", "DENY")
+		c.Header("Referrer-Policy", "strict-origin-when-cross-origin")
 	}
 }
