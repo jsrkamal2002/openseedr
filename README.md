@@ -29,11 +29,12 @@ A self-hosted cloud torrent service — add magnet links or `.torrent` files, do
 - **Real-time progress** polling — see download speed, ETA, and completion percentage
 - **File browser** — navigate directories, preview file sizes and dates
 - **Direct download** — stream any file to your browser with a single click
-- **Delete files** — remove torrents and their data when no longer needed
+- **Delete files** — inline confirmation UI (no extra modal) for both torrents and files
 - **Per-user isolation** — every user's files are sandboxed in their own directory
 - **Storage quota** — configurable per-user disk limit with a live usage bar
 - **Authentication** — email/password + Google OAuth + GitHub OAuth
-- **Pause / Resume** torrents at any time
+- **Pause / Resume** torrents at any time — race-condition-free with a 10-second grace period that prevents the background sync goroutine from overwriting a user-initiated pause
+- **Accessible UI** — ARIA labels, roles, and keyboard navigation throughout
 - **Full observability** — distributed tracing (Jaeger), metrics (Prometheus + Grafana), structured logs (Loki), all wired through OpenTelemetry
 
 ---
@@ -351,7 +352,7 @@ OpenSeedr ships a full observability stack out of the box. Every API request is 
 |---|---|---|
 | **Traces** | Every HTTP request, DB query, qBittorrent call — with trace/span IDs | Jaeger |
 | **Metrics** | Request rate, latency histograms, active requests, torrents added/deleted, storage used, login attempts | Prometheus → Grafana |
-| **Logs** | Structured JSON with `trace_id` and `span_id` injected automatically | Loki → Grafana |
+| **Logs** | Structured JSON with `trace_id` and `span_id` injected automatically; Go stdlib `log/slog` used for internal service logs (DB init, startup) | Loki → Grafana |
 
 ### Accessing the UI
 
@@ -599,7 +600,7 @@ openseedr/
 | **Passwords** | Stored as bcrypt hashes (cost 10). Never logged or returned in API responses. |
 | **JWT** | Signed with HS256, 7-day expiry. Secret loaded from environment variable, never hardcoded. |
 | **OAuth CSRF** | State parameter is generated per-request, stored in a `Secure; HttpOnly; SameSite=Strict` cookie, and verified on callback. |
-| **HTTP headers** | Nginx sets `X-Frame-Options`, `X-Content-Type-Options`, `X-XSS-Protection`, `Referrer-Policy`, `Permissions-Policy`, `Content-Security-Policy`. |
+| **HTTP headers** | Security headers (`X-Frame-Options`, `X-Content-Type-Options`, `X-XSS-Protection`, `Referrer-Policy`, `Permissions-Policy`, `Content-Security-Policy`) are set at two layers: the Go API middleware (`securityHeadersMiddleware`) and the outer nginx reverse proxy. |
 | **Input validation** | Gin `binding:"required,email"` tags + explicit field length limits on all request bodies. |
 | **Torrent file size** | `.torrent` file uploads are capped at 10 MB server-side. |
 | **Static analysis** | `go vet`, `staticcheck`, and `gosec` all pass with 0 findings. |
