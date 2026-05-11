@@ -132,8 +132,12 @@ func main() {
 		Handler:           r,
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
-		WriteTimeout:      120 * time.Second,
-		IdleTimeout:       120 * time.Second,
+		// WriteTimeout is intentionally 0 (disabled) — this is a file-serving
+		// application where downloads can take many minutes for large torrents.
+		// A fixed write timeout would kill in-progress transfers.
+		// ReadHeaderTimeout and ReadTimeout still guard against slow-request attacks.
+		WriteTimeout: 0,
+		IdleTimeout:  120 * time.Second,
 	}
 
 	go func() {
