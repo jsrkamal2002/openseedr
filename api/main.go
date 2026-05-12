@@ -86,6 +86,7 @@ func main() {
 	{
 		// Current user
 		protected.GET("/auth/me", handlers.Me)
+		protected.POST("/auth/change-password", handlers.ChangePassword)
 
 		// Torrents
 		torrents := protected.Group("/torrents")
@@ -121,6 +122,17 @@ func main() {
 		// lets the browser stream the file natively without the fetch-blob trick
 		// that loses the user-gesture context and buffers the whole file in RAM.
 		v1.GET("/files/download", middleware.AuthFlexible(), handlers.DownloadFile)
+	}
+
+	// ── Admin routes (require auth + admin role) ───────────────────────────────
+	admin := v1.Group("/admin")
+	admin.Use(middleware.Auth(), middleware.RequireAdmin())
+	{
+		admin.GET("/stats", handlers.AdminStats)
+		admin.GET("/users", handlers.AdminListUsers)
+		admin.GET("/users/:id", handlers.AdminGetUser)
+		admin.PATCH("/users/:id", handlers.AdminUpdateUser)
+		admin.DELETE("/users/:id", handlers.AdminDeleteUser)
 	}
 
 	// ── Background workers ────────────────────────────────────────────────────

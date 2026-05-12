@@ -7,8 +7,12 @@ export interface User {
   email: string
   username: string
   avatar_url?: string
+  is_admin: boolean
+  is_active: boolean
   storage_quota: number
   storage_used: number
+  download_limit: number
+  upload_limit: number
   provider: string
   created_at: string
 }

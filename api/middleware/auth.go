@@ -12,6 +12,7 @@ import (
 const userIDKey = "userID"
 const userEmailKey = "userEmail"
 const userUsernameKey = "userUsername"
+const userIsAdminKey = "userIsAdmin"
 
 // Auth validates the Bearer JWT from the Authorization header.
 func Auth() gin.HandlerFunc {
@@ -38,6 +39,7 @@ func Auth() gin.HandlerFunc {
 		c.Set(userIDKey, claims.UserID.String())
 		c.Set(userEmailKey, claims.Email)
 		c.Set(userUsernameKey, claims.Username)
+		c.Set(userIsAdminKey, claims.IsAdmin)
 		c.Next()
 	}
 }
@@ -77,8 +79,33 @@ func AuthFlexible() gin.HandlerFunc {
 		c.Set(userIDKey, claims.UserID.String())
 		c.Set(userEmailKey, claims.Email)
 		c.Set(userUsernameKey, claims.Username)
+		c.Set(userIsAdminKey, claims.IsAdmin)
 		c.Next()
 	}
+}
+
+// RequireAdmin aborts with 403 if the authenticated user is not an admin.
+// Must be used after Auth() or AuthFlexible().
+func RequireAdmin() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		isAdmin, _ := c.Get(userIsAdminKey)
+		if admin, ok := isAdmin.(bool); !ok || !admin {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
+				"error": "admin access required",
+			})
+			return
+		}
+		c.Next()
+	}
+}
+
+// GetIsAdmin extracts the admin flag from the gin context.
+func GetIsAdmin(c *gin.Context) bool {
+	v, _ := c.Get(userIsAdminKey)
+	if b, ok := v.(bool); ok {
+		return b
+	}
+	return false
 }
 
 // GetUserID extracts the authenticated user ID from gin context.

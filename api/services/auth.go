@@ -14,6 +14,7 @@ type Claims struct {
 	UserID   uuid.UUID `json:"user_id"`
 	Email    string    `json:"email"`
 	Username string    `json:"username"`
+	IsAdmin  bool      `json:"is_admin"`
 	jwt.RegisteredClaims
 }
 
@@ -27,7 +28,7 @@ func CheckPassword(password, hash string) bool {
 	return err == nil
 }
 
-func GenerateJWT(userID uuid.UUID, email, username string) (string, error) {
+func GenerateJWT(userID uuid.UUID, email, username string, isAdmin bool) (string, error) {
 	secret := os.Getenv("JWT_SECRET")
 	if secret == "" {
 		return "", errors.New("JWT_SECRET not set")
@@ -37,6 +38,7 @@ func GenerateJWT(userID uuid.UUID, email, username string) (string, error) {
 		UserID:   userID,
 		Email:    email,
 		Username: username,
+		IsAdmin:  isAdmin,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(7 * 24 * time.Hour)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),

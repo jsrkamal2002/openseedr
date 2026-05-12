@@ -30,6 +30,17 @@ const router = createRouter({
       name: 'Files',
       component: () => import('@/views/FilesView.vue'),
     },
+    {
+      path: '/profile',
+      name: 'Profile',
+      component: () => import('@/views/ProfileView.vue'),
+    },
+    {
+      path: '/admin',
+      name: 'Admin',
+      component: () => import('@/views/AdminView.vue'),
+      meta: { requiresAdmin: true },
+    },
   ],
 })
 
@@ -39,12 +50,14 @@ router.beforeEach(async (to) => {
     return { name: 'Login' }
   }
   // Restore user data after a page refresh (Pinia state is not persisted).
-  // The token survives in localStorage but auth.user is lost — call fetchMe()
-  // so the sidebar and storage balance are populated immediately.
   if (auth.isAuthenticated && !auth.user) {
     await auth.fetchMe()
   }
   if (to.meta.public && auth.isAuthenticated) {
+    return { name: 'Dashboard' }
+  }
+  // Guard admin routes
+  if (to.meta.requiresAdmin && !auth.user?.is_admin) {
     return { name: 'Dashboard' }
   }
 })

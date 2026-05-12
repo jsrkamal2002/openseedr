@@ -72,9 +72,10 @@ func Register(c *gin.Context) {
 		slog.WarnContext(ctx, "failed to create user storage dir", "user_id", user.ID, "error", err)
 	}
 
-	token, err := services.GenerateJWT(user.ID, user.Email, user.Username)
+	token, err := services.GenerateJWT(user.ID, user.Email, user.Username, user.IsAdmin)
 	if err != nil {
 		span.RecordError(err)
+		span.SetStatus(codes.Error, "hash error")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not generate token", "trace_id": observability.TraceID(ctx)})
 		return
 	}
@@ -120,7 +121,7 @@ func Login(c *gin.Context) {
 		return
 	}
 
-	token, err := services.GenerateJWT(user.ID, user.Email, user.Username)
+	token, err := services.GenerateJWT(user.ID, user.Email, user.Username, user.IsAdmin)
 	if err != nil {
 		span.RecordError(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not generate token", "trace_id": observability.TraceID(ctx)})
@@ -269,11 +270,65 @@ func handleOAuthCallback(c *gin.Context, provider string) (*models.User, string,
 		}
 	}
 
-	token, err := services.GenerateJWT(user.ID, user.Email, user.Username)
+	token, err := services.GenerateJWT(user.ID, user.Email, user.Username, user.IsAdmin)
 	if err != nil {
 		return nil, "", err
 	}
 	return &user, token, nil
+}
+
+// ChangePassword handles POST /api/v1/auth/change-password
+// Requires the user's current password and a new password (min 8 chars).
+// Only works for local (non-OAuth) accounts.
+func ChangePassword(c *gin.Context) {
+	ctx, span := authTracer.Start(c.Request.Context(), "auth.change_password")
+	defer span.End()
+
+	userID := middleware.GetUserID(c)
+	span.SetAttributes(attribute.String("user.id", userID))
+
+	var req struct {
+		CurrentPassword string `json:"current_password" binding:"required"`
+		NewPassword     string `json:"new_password"     binding:"required,min=8"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error(), "trace_id": observability.TraceID(ctx)})
+		return
+	}
+
+	var user models.User
+	if err := db.DB.First(&user, "id = ?", userID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "user not found", "trace_id": observability.TraceID(ctx)})
+		return
+	}
+
+	// OAuth accounts have no password hash — block the operation.
+	if user.Provider != "local" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "password change is not supported for OAuth accounts"})
+		return
+	}
+
+	if !services.CheckPassword(req.CurrentPassword, user.PasswordHash) {
+		span.SetStatus(codes.Error, "wrong current password")
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "current password is incorrect", "trace_id": observability.TraceID(ctx)})
+		return
+	}
+
+	newHash, err := services.HashPassword(req.NewPassword)
+	if err != nil {
+		span.RecordError(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not process new password", "trace_id": observability.TraceID(ctx)})
+		return
+	}
+
+	if err := db.DB.Model(&user).Update("password_hash", newHash).Error; err != nil {
+		span.RecordError(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not save new password", "trace_id": observability.TraceID(ctx)})
+		return
+	}
+
+	slog.InfoContext(ctx, "user changed password", "user_id", userID)
+	c.JSON(http.StatusOK, gin.H{"message": "password updated successfully"})
 }
 
 func sanitizeUsername(raw string) string {
