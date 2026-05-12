@@ -87,6 +87,7 @@ func main() {
 		// Current user
 		protected.GET("/auth/me", handlers.Me)
 		protected.POST("/auth/change-password", handlers.ChangePassword)
+		protected.POST("/auth/avatar", handlers.UploadAvatar)
 
 		// Torrents
 		torrents := protected.Group("/torrents")
@@ -134,6 +135,9 @@ func main() {
 		admin.PATCH("/users/:id", handlers.AdminUpdateUser)
 		admin.DELETE("/users/:id", handlers.AdminDeleteUser)
 	}
+
+	// ── Public avatar serving ─────────────────────────────────────────────────
+	v1.GET("/avatars/:userID", handlers.ServeAvatar)
 
 	// ── Background workers ────────────────────────────────────────────────────
 	// Auto-promote wishlist items whenever a user's storage quota is freed.
