@@ -20,3 +20,4 @@ data/
 
 # Graphify knowledge graph output
 graphify-out/
+api/api

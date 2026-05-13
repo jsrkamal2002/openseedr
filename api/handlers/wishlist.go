@@ -81,7 +81,13 @@ func PromoteWishlistItem(c *gin.Context) {
 		return
 	}
 
-	if err := checkStorageQuota(ctx, userID); err != nil {
+	var user models.User
+	if err := db.DB.First(&user, "id = ?", userID).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "user not found"})
+		return
+	}
+
+	if err := checkStorageQuota(ctx, &user); err != nil {
 		c.JSON(http.StatusForbidden, gin.H{"error": err.Error(), "trace_id": observability.TraceID(ctx)})
 		return
 	}

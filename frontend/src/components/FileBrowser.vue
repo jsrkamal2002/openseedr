@@ -2,19 +2,12 @@
 import { ref } from 'vue'
 import { useFilesStore } from '@/stores/files'
 import type { FileItem } from '@/stores/files'
+import { formatBytes } from '@/composables/useFormat'
 
 const store = useFilesStore()
 
 // Inline delete confirmation state
 const deletingPath = ref<string | null>(null)
-
-function fmt(b: number) {
-  if (!b) return '—'
-  const k = 1024
-  const s = ['B', 'KB', 'MB', 'GB', 'TB']
-  const i = Math.floor(Math.log(b) / Math.log(k))
-  return `${(b / Math.pow(k, i)).toFixed(1)} ${s[i]}`
-}
 
 function fmtDate(unix: number) {
   return new Date(unix * 1000).toLocaleDateString(undefined, {
@@ -90,7 +83,7 @@ async function confirmDelete(item: FileItem) {
 
             <!-- Size -->
             <td class="px-5 py-3 text-right text-gray-500 hidden md:table-cell">
-              {{ item.is_dir ? '—' : fmt(item.size) }}
+              {{ item.is_dir ? '—' : formatBytes(item.size) }}
             </td>
 
             <!-- Date -->

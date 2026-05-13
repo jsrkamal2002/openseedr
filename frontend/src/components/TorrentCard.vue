@@ -2,6 +2,7 @@
 import { ref, watch } from 'vue'
 import type { Torrent, TorrentFile } from '@/stores/torrents'
 import { useTorrentStore } from '@/stores/torrents'
+import { formatBytes, formatSpeed, formatEta } from '@/composables/useFormat'
 
 const props = defineProps<{ torrent: Torrent }>()
 const emit = defineEmits<{
@@ -39,31 +40,6 @@ const statusLabels: Record<string, string> = {
   error:       'Error',
 }
 
-function formatBytes(bytes: number): string {
-  if (!bytes) return '—'
-  const k = 1024
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
-  const i = Math.floor(Math.log(bytes) / Math.log(k))
-  return `${(bytes / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`
-}
-
-function formatSpeed(bytesPerSec: number): string {
-  if (!bytesPerSec) return ''
-  const k = 1024
-  const sizes = ['B/s', 'KB/s', 'MB/s', 'GB/s']
-  const i = Math.floor(Math.log(bytesPerSec) / Math.log(k))
-  return `${(bytesPerSec / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`
-}
-
-function formatEta(seconds: number): string {
-  if (!seconds || seconds <= 0 || seconds >= 8640000) return ''
-  if (seconds < 60) return `${seconds}s`
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${seconds % 60}s`
-  const h = Math.floor(seconds / 3600)
-  const m = Math.floor((seconds % 3600) / 60)
-  return m > 0 ? `${h}h ${m}m` : `${h}h`
-}
-
 function basename(path: string): string {
   return path.split('/').pop() ?? path
 }
@@ -88,6 +64,7 @@ async function loadFiles() {
   loadingFiles.value = true
   try {
     files.value = await torrentStore.fetchTorrentFiles(props.torrent.id)
+    lastFetchedProgress = props.torrent.progress
   } finally {
     loadingFiles.value = false
   }
@@ -100,9 +77,17 @@ async function toggleFiles() {
   }
 }
 
-// Re-fetch file progress whenever the parent torrent progress ticks (every 5s poll)
-watch(() => props.torrent.progress, () => {
-  if (expanded.value) loadFiles()
+// Re-fetch file progress whenever the parent torrent progress ticks (every 5s poll).
+// Skip if collapsed, completed/paused/error, or progress hasn't moved by >0.5%.
+let lastFetchedProgress = -1
+
+watch(() => props.torrent.progress, (newPct) => {
+  if (!expanded.value) return
+  // Don't re-fetch for completed/paused/error — files are final
+  if (['completed', 'paused', 'error'].includes(props.torrent.status)) return
+  // Only re-fetch if progress moved by more than 0.5%
+  if (Math.abs(newPct - lastFetchedProgress) < 0.005) return
+  loadFiles()
 })
 </script>
 

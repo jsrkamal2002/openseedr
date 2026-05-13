@@ -42,13 +42,17 @@ type FileInfo struct {
 // os.Root (Go ≥1.24) prevents directory-traversal attacks at the OS level.
 func openUserRoot(userID string) (*os.Root, error) {
 	basePath := UserStoragePath(userID)
-	// 0777: must be writable by qBittorrent (different UID) for downloads.
-	// os.Chmod overrides the process umask which would strip write bits.
-	if err := os.MkdirAll(basePath, 0777); err != nil {
-		return nil, err
-	}
-	if err := os.Chmod(basePath, 0777); err != nil {
-		return nil, err
+	// Only run MkdirAll+Chmod when the directory doesn't exist yet.
+	// On the hot path (directory already present) this saves two syscalls.
+	if _, err := os.Stat(basePath); os.IsNotExist(err) {
+		// 0777: must be writable by qBittorrent (different UID) for downloads.
+		// os.Chmod overrides the process umask which would strip write bits.
+		if err := os.MkdirAll(basePath, 0777); err != nil {
+			return nil, err
+		}
+		if err := os.Chmod(basePath, 0777); err != nil {
+			return nil, err
+		}
 	}
 	return os.OpenRoot(basePath)
 }

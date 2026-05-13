@@ -4,6 +4,7 @@ import { useAdminStore } from '@/stores/admin'
 import { useAuthStore } from '@/stores/auth'
 import type { User } from '@/stores/auth'
 import AppLayout from '@/components/AppLayout.vue'
+import { formatBytesZero, formatSpeedLimit } from '@/composables/useFormat'
 
 const adminStore = useAdminStore()
 const auth = useAuthStore()
@@ -73,19 +74,7 @@ async function executeDelete() {
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-function fmtBytes(bytes: number): string {
-  if (bytes === 0) return '0 B'
-  const k = 1024
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
-  const i = Math.floor(Math.log(bytes) / Math.log(k))
-  return `${(bytes / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`
-}
-
-function fmtSpeed(bytesPerSec: number): string {
-  if (bytesPerSec === 0) return 'Unlimited'
-  const mbps = bytesPerSec / 131072
-  return `${mbps.toFixed(1)} Mbps`
-}
+// formatBytesZero and formatSpeedLimit imported from @/composables/useFormat
 
 const storagePercent = computed(() => {
   if (!adminStore.stats) return 0
@@ -136,8 +125,8 @@ onMounted(async () => {
         </div>
         <div class="bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
           <p class="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">Storage Used</p>
-          <p class="text-2xl font-bold text-gray-900 dark:text-white mt-1">{{ fmtBytes(adminStore.stats.storage.used_bytes) }}</p>
-          <p class="text-xs text-gray-400 mt-0.5">of {{ fmtBytes(adminStore.stats.storage.quota_bytes) }} total quota</p>
+          <p class="text-2xl font-bold text-gray-900 dark:text-white mt-1">{{ formatBytesZero(adminStore.stats.storage.used_bytes) }}</p>
+          <p class="text-xs text-gray-400 mt-0.5">of {{ formatBytesZero(adminStore.stats.storage.quota_bytes) }} total quota</p>
         </div>
         <div class="bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
           <p class="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">Storage Usage</p>
@@ -212,10 +201,10 @@ onMounted(async () => {
                   </span>
                 </td>
                 <td class="px-5 py-3 text-gray-600 dark:text-gray-300">
-                  {{ fmtBytes(u.storage_used) }} / {{ fmtBytes(u.storage_quota) }}
+                  {{ formatBytesZero(u.storage_used) }} / {{ formatBytesZero(u.storage_quota) }}
                 </td>
-                <td class="px-5 py-3 text-gray-600 dark:text-gray-300">{{ fmtSpeed(u.download_limit) }}</td>
-                <td class="px-5 py-3 text-gray-600 dark:text-gray-300">{{ fmtSpeed(u.upload_limit) }}</td>
+                <td class="px-5 py-3 text-gray-600 dark:text-gray-300">{{ formatSpeedLimit(u.download_limit) }}</td>
+                <td class="px-5 py-3 text-gray-600 dark:text-gray-300">{{ formatSpeedLimit(u.upload_limit) }}</td>
                 <td class="px-5 py-3 text-gray-400 text-xs">{{ new Date(u.created_at).toLocaleDateString() }}</td>
                 <td class="px-5 py-3">
                   <div class="flex gap-2 justify-end">

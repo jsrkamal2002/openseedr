@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import AppLayout from '@/components/AppLayout.vue'
 import api from '@/composables/useApi'
+import { formatBytesZero, formatSpeedLimit } from '@/composables/useFormat'
 
 const auth = useAuthStore()
 
@@ -104,19 +105,6 @@ async function changePassword() {
     pwSaving.value = false
   }
 }
-
-function fmtBytes(bytes: number): string {
-  if (bytes === 0) return '0 B'
-  const k = 1024
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
-  const i = Math.floor(Math.log(bytes) / Math.log(k))
-  return `${(bytes / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`
-}
-
-function fmtSpeed(bytesPerSec: number): string {
-  if (!bytesPerSec) return 'Unlimited'
-  return `${(bytesPerSec / 131072).toFixed(1)} Mbps`
-}
 </script>
 
 <template>
@@ -204,15 +192,15 @@ function fmtSpeed(bytesPerSec: number): string {
           <div>
             <p class="text-xs text-gray-500 dark:text-gray-400">Storage used</p>
             <p class="font-medium text-gray-900 dark:text-white mt-0.5">
-              {{ fmtBytes(auth.user?.storage_used ?? 0) }}
-              <span class="text-gray-400">/ {{ fmtBytes(auth.user?.storage_quota ?? 0) }}</span>
+              {{ formatBytesZero(auth.user?.storage_used ?? 0) }}
+              <span class="text-gray-400">/ {{ formatBytesZero(auth.user?.storage_quota ?? 0) }}</span>
             </p>
           </div>
           <div>
             <p class="text-xs text-gray-500 dark:text-gray-400">Speed limits</p>
             <p class="font-medium text-gray-900 dark:text-white mt-0.5 text-xs">
-              Down: {{ fmtSpeed(auth.user?.download_limit ?? 0) }} &nbsp;·&nbsp;
-              Up: {{ fmtSpeed(auth.user?.upload_limit ?? 0) }}
+              Down: {{ formatSpeedLimit(auth.user?.download_limit ?? 0) }} &nbsp;·&nbsp;
+              Up: {{ formatSpeedLimit(auth.user?.upload_limit ?? 0) }}
             </p>
           </div>
           <div>

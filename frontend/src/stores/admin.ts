@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import api from '@/composables/useApi'
 import type { User } from './auth'
 
@@ -26,11 +26,13 @@ export interface AdminStats {
 export const useAdminStore = defineStore('admin', () => {
   const users = ref<User[]>([])
   const stats = ref<AdminStats | null>(null)
-  const loading = ref(false)
+  const loadingStats = ref(false)
+  const loadingUsers = ref(false)
+  const loading = computed(() => loadingStats.value || loadingUsers.value)
   const error = ref<string | null>(null)
 
   async function fetchStats() {
-    loading.value = true
+    loadingStats.value = true
     error.value = null
     try {
       const { data } = await api.get('/admin/stats')
@@ -38,12 +40,12 @@ export const useAdminStore = defineStore('admin', () => {
     } catch (e: any) {
       error.value = e?.response?.data?.error ?? 'Failed to load stats'
     } finally {
-      loading.value = false
+      loadingStats.value = false
     }
   }
 
   async function fetchUsers() {
-    loading.value = true
+    loadingUsers.value = true
     error.value = null
     try {
       const { data } = await api.get('/admin/users')
@@ -51,7 +53,7 @@ export const useAdminStore = defineStore('admin', () => {
     } catch (e: any) {
       error.value = e?.response?.data?.error ?? 'Failed to load users'
     } finally {
-      loading.value = false
+      loadingUsers.value = false
     }
   }
 
@@ -76,5 +78,5 @@ export const useAdminStore = defineStore('admin', () => {
     users.value = users.value.filter((u) => u.id !== id)
   }
 
-  return { users, stats, loading, error, fetchStats, fetchUsers, updateUser, deleteUser }
+  return { users, stats, loading, loadingStats, loadingUsers, error, fetchStats, fetchUsers, updateUser, deleteUser }
 })

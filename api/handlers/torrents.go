@@ -103,8 +103,15 @@ func ListTorrents(c *gin.Context) {
 		// Use UpdateColumns (not Updates) so GORM does not auto-reset updated_at
 		// on every poll — updated_at must only change on real user actions
 		// (pause, resume, add) so the grace-period guard above works correctly.
+		// Skip rows where nothing changed — most polls have no changes for
+		// completed/seeding/paused torrents, avoiding N unnecessary DB round-trips.
 		go func() {
-			for _, r := range responses {
+			for i, r := range responses {
+				orig := torrents[i]
+				if r.Progress == orig.Progress && r.Downloaded == orig.Downloaded &&
+					r.Size == orig.Size && r.Status == orig.Status {
+					continue // nothing changed — skip the UPDATE
+				}
 				db.DB.Model(&r.Torrent).UpdateColumns(map[string]interface{}{
 					"progress":   r.Progress,
 					"downloaded": r.Downloaded,
@@ -142,8 +149,16 @@ func AddMagnet(c *gin.Context) {
 	}
 	savePath := services.UserStoragePath(userID)
 
+	// Fetch the user once — used for quota check and torrent creation below.
+	var user models.User
+	if err := db.DB.First(&user, "id = ?", userID).Error; err != nil {
+		span.RecordError(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "user not found", "trace_id": observability.TraceID(ctx)})
+		return
+	}
+
 	// If quota is exceeded, save to wishlist instead of returning 403.
-	if err := checkStorageQuota(ctx, userID); err != nil {
+	if err := checkStorageQuota(ctx, &user); err != nil {
 		torrent, dbErr := upsertWishlistMagnet(userID, hash, name, savePath, req.MagnetURL)
 		if dbErr != nil {
 			span.RecordError(dbErr)
@@ -298,9 +313,17 @@ func AddTorrentFile(c *gin.Context) {
 		torrentName = torrentName[:len(torrentName)-8]
 	}
 
+	// Fetch the user once — used for quota check and torrent creation below.
+	var user models.User
+	if err := db.DB.First(&user, "id = ?", userID).Error; err != nil {
+		span.RecordError(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "user not found", "trace_id": observability.TraceID(ctx)})
+		return
+	}
+
 	// If quota is exceeded, save the raw .torrent bytes to the wishlist so
 	// they can be submitted to qBittorrent once space becomes available.
-	if err := checkStorageQuota(ctx, userID); err != nil {
+	if err := checkStorageQuota(ctx, &user); err != nil {
 		torrent := &models.Torrent{
 			UserID:      uuid.MustParse(userID),
 			Hash:        infoHash,
@@ -516,12 +539,10 @@ func GetTorrentFiles(c *gin.Context) {
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
-func checkStorageQuota(ctx context.Context, userID string) error {
-	var user models.User
-	if err := db.DB.First(&user, "id = ?", userID).Error; err != nil {
-		return fmt.Errorf("user not found")
-	}
-	used, _ := services.DirSize(services.UserStoragePath(userID))
+// checkStorageQuota checks whether the user has exceeded their storage quota.
+// The caller must pass the already-fetched user so we avoid a redundant DB round-trip.
+func checkStorageQuota(ctx context.Context, user *models.User) error {
+	used, _ := services.DirSize(services.UserStoragePath(user.ID.String()))
 	if used >= user.StorageQuota {
 		return fmt.Errorf("storage quota exceeded (%.2f GB used)", float64(used)/1e9)
 	}

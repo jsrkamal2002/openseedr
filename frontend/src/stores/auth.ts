@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import api from '@/composables/useApi'
+import api, { setToken, clearToken } from '@/composables/useApi'
 
 export interface User {
   id: string
@@ -27,14 +27,21 @@ export const useAuthStore = defineStore('auth', () => {
     const { data } = await api.post('/auth/login', { email, password })
     token.value = data.token
     user.value = data.user
-    localStorage.setItem('token', data.token)
+    setToken(data.token)
   }
 
   async function register(email: string, username: string, password: string) {
     const { data } = await api.post('/auth/register', { email, username, password })
     token.value = data.token
     user.value = data.user
-    localStorage.setItem('token', data.token)
+    setToken(data.token)
+  }
+
+  async function setupAdmin(email: string, username: string, password: string) {
+    const { data } = await api.post('/setup/admin', { email, username, password })
+    token.value = data.token
+    user.value = data.user
+    setToken(data.token)
   }
 
   async function fetchMe() {
@@ -49,12 +56,12 @@ export const useAuthStore = defineStore('auth', () => {
   function logout() {
     token.value = null
     user.value = null
-    localStorage.removeItem('token')
+    clearToken()
   }
 
   function loginWithOAuth(provider: 'google' | 'github') {
     window.location.href = `/api/v1/auth/${provider}`
   }
 
-  return { token, user, isAuthenticated, login, register, fetchMe, logout, loginWithOAuth }
+  return { token, user, isAuthenticated, login, register, setupAdmin, fetchMe, logout, loginWithOAuth }
 })

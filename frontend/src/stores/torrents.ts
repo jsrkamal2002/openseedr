@@ -1,7 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import api from '@/composables/useApi'
-import { useAuthStore } from '@/stores/auth'
 
 export interface Torrent {
   id: string
@@ -66,9 +65,6 @@ export const useTorrentStore = defineStore('torrents', () => {
   async function deleteTorrent(id: string, deleteFiles = false) {
     await api.delete(`/torrents/${id}?delete_files=${deleteFiles}`)
     torrents.value = torrents.value.filter((t) => t.id !== id)
-    // Refresh auth user so storage_used on StorageBar updates immediately
-    const auth = useAuthStore()
-    await auth.fetchMe()
   }
 
   async function pauseTorrent(id: string) {

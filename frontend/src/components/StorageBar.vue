@@ -1,23 +1,17 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { formatBytesZero } from '@/composables/useFormat'
 
 const props = defineProps<{ used: number; quota: number }>()
 
 const pct = computed(() => props.quota > 0 ? Math.min((props.used / props.quota) * 100, 100) : 0)
-
-function fmt(b: number) {
-  if (b === 0) return '0 B'
-  const k = 1024, s = ['B', 'KB', 'MB', 'GB', 'TB']
-  const i = Math.floor(Math.log(b) / Math.log(k))
-  return `${(b / Math.pow(k, i)).toFixed(1)} ${s[i]}`
-}
 </script>
 
 <template>
   <div class="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl px-5 py-4 transition-colors">
     <div class="flex justify-between text-sm mb-2">
       <span class="text-gray-500 dark:text-gray-400">Storage used</span>
-      <span class="text-gray-700 dark:text-gray-300">{{ fmt(used) }} / {{ fmt(quota) }}</span>
+      <span class="text-gray-700 dark:text-gray-300">{{ formatBytesZero(used) }} / {{ formatBytesZero(quota) }}</span>
     </div>
     <div class="h-2 bg-gray-200 dark:bg-gray-800 rounded-full overflow-hidden">
       <div
