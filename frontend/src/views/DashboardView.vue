@@ -20,8 +20,8 @@ onMounted(async () => {
   // Refresh user (includes real storage_used computed from disk) and torrents
   // concurrently so the storage bar shows an accurate balance on every visit.
   await Promise.all([torrentStore.fetchTorrents(), auth.fetchMe()])
-  // Poll every 5 seconds to refresh torrent progress
-  pollInterval = setInterval(() => torrentStore.fetchTorrents(), 5000)
+  // Poll every 5 seconds to refresh torrent progress and storage usage
+  pollInterval = setInterval(() => Promise.all([torrentStore.fetchTorrents(), auth.fetchMe()]), 5000)
 })
 
 onUnmounted(() => clearInterval(pollInterval))

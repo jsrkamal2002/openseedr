@@ -1,7 +1,9 @@
 <script setup lang="ts">
+import { computed } from 'vue'
+
 const props = defineProps<{ used: number; quota: number }>()
 
-const pct = Math.min((props.used / props.quota) * 100, 100)
+const pct = computed(() => props.quota > 0 ? Math.min((props.used / props.quota) * 100, 100) : 0)
 
 function fmt(b: number) {
   if (b === 0) return '0 B'
